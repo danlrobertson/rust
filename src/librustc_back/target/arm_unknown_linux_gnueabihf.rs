@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use LinkerFlavor;
-use target::{Target, TargetOptions, TargetResult};
+use target::{Target, TargetOptions, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let mut base = super::linux_base::opts();
@@ -29,6 +29,7 @@ pub fn target() -> TargetResult {
         options: TargetOptions {
             features: "+strict-align,+v6,+vfp2".to_string(),
             abi_blacklist: super::arm_base::abi_blacklist(),
+            va_list_kind: VaListKind::VoidPtr,
             .. base
         }
     })

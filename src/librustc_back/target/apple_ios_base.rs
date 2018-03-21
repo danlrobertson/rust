@@ -11,7 +11,7 @@
 use LinkerFlavor;
 use std::io;
 use std::process::Command;
-use target::{LinkArgs, TargetOptions};
+use target::{LinkArgs, TargetOptions, VaListKind};
 
 use self::Arch::*;
 
@@ -93,6 +93,13 @@ fn target_cpu(arch: Arch) -> String {
 
 pub fn opts(arch: Arch) -> Result<TargetOptions, String> {
     let pre_link_args = build_pre_link_args(arch)?;
+    let va_list_kind = match arch {
+        Arch::Armv7 | Arch::Armv7s => VaListKind::VoidPtr,
+        Arch::Arm64 => VaListKind::AArch64Abi,
+        Arch::I386 => VaListKind::CharPtr,
+        Arch::X86_64 => VaListKind::X86_64Abi,
+    };
+
     Ok(TargetOptions {
         cpu: target_cpu(arch),
         dynamic_linking: false,
@@ -103,6 +110,7 @@ pub fn opts(arch: Arch) -> Result<TargetOptions, String> {
         // ios. jemalloc 5.0 is supposed to fix this.
         // see https://github.com/rust-lang/rust/issues/45262
         exe_allocation_crate: None,
+        va_list_kind,
         .. super::apple_base::opts()
     })
 }

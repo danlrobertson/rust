@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use LinkerFlavor;
-use target::{Target, TargetOptions, TargetResult};
+use target::{Target, TargetOptions, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let base = super::linux_musl_base::opts();
@@ -35,6 +35,7 @@ pub fn target() -> TargetResult {
             cpu: "generic".to_string(),
             max_atomic_width: Some(64),
             abi_blacklist: super::arm_base::abi_blacklist(),
+            va_list_kind: VaListKind::VoidPtr,
             .. base
         }
     })

@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use LinkerFlavor;
-use target::{Target, TargetResult};
+use target::{Target, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let mut base = super::cloudabi_base::opts();
@@ -18,6 +18,7 @@ pub fn target() -> TargetResult {
     base.features = "+v7,+vfp3,+neon".to_string();
     base.abi_blacklist = super::arm_base::abi_blacklist();
     base.linker = Some("armv7-unknown-cloudabi-eabihf-cc".to_string());
+    base.va_list_kind = VaListKind::VoidPtr;
 
     Ok(Target {
         llvm_target: "armv7-unknown-cloudabi-eabihf".to_string(),

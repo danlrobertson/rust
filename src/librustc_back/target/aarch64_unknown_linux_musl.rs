@@ -9,11 +9,12 @@
 // except according to those terms.
 
 use LinkerFlavor;
-use target::{Target, TargetOptions, TargetResult};
+use target::{Target, TargetOptions, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let mut base = super::linux_musl_base::opts();
     base.max_atomic_width = Some(128);
+    base.va_list_kind = VaListKind::AArch64Abi;
 
     // see #36994
     base.exe_allocation_crate = None;
