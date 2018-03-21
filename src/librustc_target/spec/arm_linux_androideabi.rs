@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use spec::{LinkerFlavor, Target, TargetOptions, TargetResult};
+use spec::{LinkerFlavor, Target, TargetOptions, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let mut base = super::android_base::opts();
@@ -29,6 +29,7 @@ pub fn target() -> TargetResult {
         linker_flavor: LinkerFlavor::Gcc,
         options: TargetOptions {
             abi_blacklist: super::arm_base::abi_blacklist(),
+            va_list_kind: VaListKind::VoidPtr,
             .. base
         },
     })

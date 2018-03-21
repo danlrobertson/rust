@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use spec::{LinkerFlavor, Target, TargetOptions, TargetResult};
+use spec::{LinkerFlavor, Target, TargetOptions, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let base = super::linux_musl_base::opts();
@@ -34,6 +34,7 @@ pub fn target() -> TargetResult {
             cpu: "generic".to_string(),
             max_atomic_width: Some(64),
             abi_blacklist: super::arm_base::abi_blacklist(),
+            va_list_kind: VaListKind::VoidPtr,
             .. base
         }
     })

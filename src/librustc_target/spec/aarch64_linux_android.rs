@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use spec::{LinkerFlavor, Target, TargetOptions, TargetResult};
+use spec::{LinkerFlavor, Target, TargetOptions, TargetResult, VaListKind};
 
 // See https://developer.android.com/ndk/guides/abis.html#arm64-v8a
 // for target ABI requirements.
@@ -19,6 +19,7 @@ pub fn target() -> TargetResult {
     // As documented in http://developer.android.com/ndk/guides/cpu-features.html
     // the neon (ASIMD) and FP must exist on all android aarch64 targets.
     base.features = "+neon,+fp-armv8".to_string();
+    base.va_list_kind = VaListKind::AArch64Abi;
     Ok(Target {
         llvm_target: "aarch64-linux-android".to_string(),
         target_endian: "little".to_string(),

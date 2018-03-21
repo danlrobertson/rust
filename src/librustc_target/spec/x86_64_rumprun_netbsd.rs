@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use spec::{LinkerFlavor, Target, TargetResult};
+use spec::{LinkerFlavor, Target, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let mut base = super::netbsd_base::opts();
@@ -24,6 +24,7 @@ pub fn target() -> TargetResult {
     base.no_default_libraries = false;
     base.exe_allocation_crate = None;
     base.stack_probes = true;
+    base.va_list_kind = VaListKind::X86_64Abi;
 
     Ok(Target {
         llvm_target: "x86_64-rumprun-netbsd".to_string(),

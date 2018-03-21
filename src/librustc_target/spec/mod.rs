@@ -623,6 +623,9 @@ pub struct TargetOptions {
     /// typically because the platform needs to unwind for things like stack
     /// unwinders.
     pub requires_uwtable: bool,
+
+    /// Kind of `va_list` types defined by the target implementation.
+    pub va_list_kind: VaListKind,
 }
 
 impl Default for TargetOptions {
@@ -697,6 +700,7 @@ impl Default for TargetOptions {
             embed_bitcode: false,
             emit_debug_gdb_scripts: true,
             requires_uwtable: false,
+            va_list_kind: VaListKind::CharPtr,
         }
     }
 }
@@ -843,6 +847,21 @@ impl Target {
                     })
                 })).unwrap_or(Ok(()))
             } );
+            ($key_name:ident, VaListKind) => ( {
+                let name = (stringify!($key_name)).replace("_", "-");
+                obj.find(&name[..]).and_then(|o| o.as_string().map(|s| {
+                    match VaListKind::from_str(&s) {
+                        Ok(kind) => {
+                            base.options.$key_name = kind;
+                            Ok(())
+                        }
+                        Err(_) => Err(format!("'{}' is not a valid value for {}.  Use \
+                                               'char-ptr', 'void-ptr', 'aarch64-abi' \
+                                               'powerpc-abi', or 'x86_64-abi'",
+                                              s, name))
+                    }
+                })).unwrap_or(Ok(()))
+            } );
             ($key_name:ident, link_args) => ( {
                 let name = (stringify!($key_name)).replace("_", "-");
                 if let Some(obj) = obj.find(&name[..]).and_then(|o| o.as_object()) {
@@ -948,6 +967,7 @@ impl Target {
         key!(embed_bitcode, bool);
         key!(emit_debug_gdb_scripts, bool);
         key!(requires_uwtable, bool);
+        try!(key!(va_list_kind, VaListKind));
 
         if let Some(array) = obj.find("abi-blacklist").and_then(Json::as_array) {
             for name in array.iter().filter_map(|abi| abi.as_string()) {
@@ -1153,6 +1173,7 @@ impl ToJson for Target {
         target_option_val!(embed_bitcode);
         target_option_val!(emit_debug_gdb_scripts);
         target_option_val!(requires_uwtable);
+        target_option_val!(va_list_kind);
 
         if default.abi_blacklist != self.options.abi_blacklist {
             d.insert("abi-blacklist".to_string(), self.options.abi_blacklist.iter()
@@ -1227,5 +1248,47 @@ impl TargetTriple {
 impl fmt::Display for TargetTriple {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.debug_triple())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Hash, RustcEncodable, RustcDecodable)]
+pub enum VaListKind {
+    CharPtr,
+    VoidPtr,
+    AArch64Abi,
+    PowerPcAbi,
+    X86_64Abi,
+}
+
+impl VaListKind {
+    pub fn desc(&self) -> &str {
+        match self {
+            &VaListKind::CharPtr => "char-ptr",
+            &VaListKind::VoidPtr => "void-ptr",
+            &VaListKind::AArch64Abi => "aarch64-abi",
+            &VaListKind::PowerPcAbi => "powerpc-abi",
+            &VaListKind::X86_64Abi => "x86_64-abi",
+        }
+    }
+}
+
+impl FromStr for VaListKind {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<VaListKind, ()> {
+        match s {
+            "char-ptr" => Ok(VaListKind::CharPtr),
+            "void-ptr" => Ok(VaListKind::VoidPtr),
+            "aarch64-abi" => Ok(VaListKind::AArch64Abi),
+            "powerpc-abi" => Ok(VaListKind::PowerPcAbi),
+            "x86_64-abi" => Ok(VaListKind::X86_64Abi),
+            _ => Err(()),
+        }
+    }
+}
+
+impl ToJson for VaListKind {
+    fn to_json(&self) -> Json {
+        self.desc().to_json()
     }
 }

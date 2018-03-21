@@ -8,11 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use spec::{LinkerFlavor, Target, TargetOptions, TargetResult};
+use spec::{LinkerFlavor, Target, TargetOptions, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let mut base = super::fuchsia_base::opts();
     base.max_atomic_width = Some(128);
+    base.va_list_kind = VaListKind::AArch64Abi;
 
     Ok(Target {
         llvm_target: "aarch64-unknown-fuchsia".to_string(),

@@ -8,12 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use spec::{LinkerFlavor, Target, TargetResult};
+use spec::{LinkerFlavor, Target, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let mut base = super::linux_base::opts();
     base.pre_link_args.get_mut(&LinkerFlavor::Gcc).unwrap().push("-mspe".to_string());
     base.max_atomic_width = Some(32);
+    base.va_list_kind = VaListKind::PowerPcAbi;
 
     // see #36994
     base.exe_allocation_crate = None;

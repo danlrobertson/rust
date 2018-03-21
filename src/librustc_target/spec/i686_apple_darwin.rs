@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use spec::{LinkerFlavor, Target, TargetResult};
+use spec::{LinkerFlavor, Target, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let mut base = super::apple_base::opts();
@@ -16,6 +16,7 @@ pub fn target() -> TargetResult {
     base.max_atomic_width = Some(64);
     base.pre_link_args.insert(LinkerFlavor::Gcc, vec!["-m32".to_string()]);
     base.stack_probes = true;
+    base.va_list_kind = VaListKind::CharPtr;
 
     Ok(Target {
         llvm_target: "i686-apple-darwin".to_string(),
@@ -28,6 +29,6 @@ pub fn target() -> TargetResult {
         target_env: "".to_string(),
         target_vendor: "apple".to_string(),
         linker_flavor: LinkerFlavor::Gcc,
-        options: base,
+        options: base
     })
 }

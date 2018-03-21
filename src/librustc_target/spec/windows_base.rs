@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use spec::{LinkArgs, LinkerFlavor, TargetOptions};
+use spec::{LinkArgs, LinkerFlavor, TargetOptions, VaListKind};
 use std::default::Default;
 
 pub fn opts() -> TargetOptions {
@@ -103,6 +103,8 @@ pub fn opts() -> TargetOptions {
         abi_return_struct_as_int: true,
         emit_debug_gdb_scripts: false,
         requires_uwtable: true,
+        // A `va_list` type is always the CharPtr variant on windows.
+        va_list_kind: VaListKind::CharPtr,
 
         .. Default::default()
     }

@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use spec::{LinkerFlavor, Target, TargetResult};
+use spec::{LinkerFlavor, Target, TargetResult, VaListKind};
 
 // See https://developer.android.com/ndk/guides/abis.html#x86
 // for target ABI requirements.
@@ -22,6 +22,7 @@ pub fn target() -> TargetResult {
     base.cpu = "pentiumpro".to_string();
     base.features = "+mmx,+sse,+sse2,+sse3,+ssse3".to_string();
     base.stack_probes = true;
+    base.va_list_kind = VaListKind::CharPtr;
 
     Ok(Target {
         llvm_target: "i686-linux-android".to_string(),
