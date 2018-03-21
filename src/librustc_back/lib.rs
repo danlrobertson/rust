@@ -169,3 +169,48 @@ impl ToJson for RelroLevel {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Hash, RustcEncodable, RustcDecodable)]
+pub enum VaListKind {
+    CharPtr,
+    VoidPtr,
+    AArch64Abi,
+    PowerPcAbi,
+    X86_64Abi,
+    None
+}
+
+impl VaListKind {
+    pub fn desc(&self) -> &str {
+        match self {
+            &VaListKind::CharPtr => "char-ptr",
+            &VaListKind::VoidPtr => "void-ptr",
+            &VaListKind::AArch64Abi => "aarch64-abi",
+            &VaListKind::PowerPcAbi => "powerpc-abi",
+            &VaListKind::X86_64Abi => "x86_64-abi",
+            &VaListKind::None => "none"
+        }
+    }
+}
+
+impl FromStr for VaListKind {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<VaListKind, ()> {
+        match s {
+            "char-ptr" => Ok(VaListKind::CharPtr),
+            "void-ptr" => Ok(VaListKind::VoidPtr),
+            "aarch64-abi" => Ok(VaListKind::AArch64Abi),
+            "powerpc-abi" => Ok(VaListKind::PowerPcAbi),
+            "x86_64-abi" => Ok(VaListKind::X86_64Abi),
+            "none" => Ok(VaListKind::None),
+            _ => Err(()),
+        }
+    }
+}
+
+impl ToJson for VaListKind {
+    fn to_json(&self) -> Json {
+        self.desc().to_json()
+    }
+}

@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use LinkerFlavor;
-use target::{Target, TargetOptions, TargetResult};
+use target::{Target, TargetOptions, TargetResult, VaListKind};
 
 // See https://developer.android.com/ndk/guides/abis.html#v7a
 // for target ABI requirements.
@@ -34,6 +34,7 @@ pub fn target() -> TargetResult {
         linker_flavor: LinkerFlavor::Gcc,
         options: TargetOptions {
             abi_blacklist: super::arm_base::abi_blacklist(),
+            va_list_kind: VaListKind::VoidPtr,
             .. base
         },
     })

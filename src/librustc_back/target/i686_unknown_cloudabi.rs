@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use LinkerFlavor;
-use target::{Target, TargetResult};
+use target::{Target, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let mut base = super::cloudabi_base::opts();
@@ -18,6 +18,7 @@ pub fn target() -> TargetResult {
     base.linker = Some("i686-unknown-cloudabi-cc".to_string());
     base.pre_link_args.get_mut(&LinkerFlavor::Gcc).unwrap().push("-m32".to_string());
     base.stack_probes = true;
+    base.va_list_kind = VaListKind::CharPtr;
 
     Ok(Target {
         llvm_target: "i686-unknown-cloudabi".to_string(),

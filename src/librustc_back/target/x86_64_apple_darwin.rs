@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use LinkerFlavor;
-use target::{Target, TargetResult};
+use target::{Target, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let mut base = super::apple_base::opts();
@@ -18,6 +18,7 @@ pub fn target() -> TargetResult {
     base.eliminate_frame_pointer = false;
     base.pre_link_args.insert(LinkerFlavor::Gcc, vec!["-m64".to_string()]);
     base.stack_probes = true;
+    base.va_list_kind = VaListKind::X86_64Abi;
 
     Ok(Target {
         llvm_target: "x86_64-apple-darwin".to_string(),
@@ -30,6 +31,6 @@ pub fn target() -> TargetResult {
         target_env: "".to_string(),
         target_vendor: "apple".to_string(),
         linker_flavor: LinkerFlavor::Gcc,
-        options: base,
+        options: base
     })
 }

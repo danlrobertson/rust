@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use LinkerFlavor;
-use target::{Target, TargetResult};
+use target::{Target, TargetResult, VaListKind};
 
 pub fn target() -> TargetResult {
     let mut base = super::linux_musl_base::opts();
@@ -18,6 +18,7 @@ pub fn target() -> TargetResult {
     base.pre_link_args.get_mut(&LinkerFlavor::Gcc).unwrap().push("-m32".to_string());
     base.pre_link_args.get_mut(&LinkerFlavor::Gcc).unwrap().push("-Wl,-melf_i386".to_string());
     base.stack_probes = true;
+    base.va_list_kind = VaListKind::CharPtr;
 
     // The unwinder used by i686-unknown-linux-musl, the LLVM libunwind
     // implementation, apparently relies on frame pointers existing... somehow.

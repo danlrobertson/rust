@@ -9,13 +9,14 @@
 // except according to those terms.
 
 use LinkerFlavor;
-use target::{Target, TargetResult, RelroLevel};
+use target::{Target, TargetResult, RelroLevel, VaListKind};
 
 pub fn target() -> TargetResult {
     let mut base = super::linux_base::opts();
     base.cpu = "ppc64".to_string();
     base.pre_link_args.get_mut(&LinkerFlavor::Gcc).unwrap().push("-m64".to_string());
     base.max_atomic_width = Some(64);
+    base.va_list_kind = VaListKind::CharPtr;
 
     // ld.so in at least RHEL6 on ppc64 has a bug related to BIND_NOW, so only enable partial RELRO
     // for now. https://github.com/rust-lang/rust/pull/43170#issuecomment-315411474

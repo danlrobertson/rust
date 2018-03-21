@@ -49,9 +49,10 @@ use std::collections::BTreeMap;
 use std::default::Default;
 use std::{fmt, io};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use syntax::abi::{Abi, lookup as lookup_abi};
 
-use {LinkerFlavor, PanicStrategy, RelroLevel};
+use {LinkerFlavor, PanicStrategy, RelroLevel, VaListKind};
 
 mod android_base;
 mod apple_base;
@@ -478,6 +479,9 @@ pub struct TargetOptions {
 
     /// Whether or not bitcode is embedded in object files
     pub embed_bitcode: bool,
+
+    /// Kind of `va_list` types defined by the target implementation.
+    pub va_list_kind: VaListKind,
 }
 
 impl Default for TargetOptions {
@@ -550,6 +554,7 @@ impl Default for TargetOptions {
             codegen_backend: "llvm".to_string(),
             default_hidden_visibility: false,
             embed_bitcode: false,
+            va_list_kind: VaListKind::None,
         }
     }
 }
@@ -696,6 +701,21 @@ impl Target {
                     })
                 })).unwrap_or(Ok(()))
             } );
+            ($key_name:ident, VaListKind) => ( {
+                let name = (stringify!($key_name)).replace("_", "-");
+                obj.find(&name[..]).and_then(|o| o.as_string().map(|s| {
+                    match VaListKind::from_str(&s) {
+                        Ok(kind) => {
+                            base.options.$key_name = kind;
+                            Ok(())
+                        }
+                        Err(_) => Err(format!("'{}' is not a valid value for {}.  Use \
+                                               'char-ptr', 'void-ptr', 'aarch64-abi' \
+                                               'powerpc-abi', 'x86_64-abi', or 'none'",
+                                              s, name))
+                    }
+                })).unwrap_or(Ok(()))
+            } );
             ($key_name:ident, link_args) => ( {
                 let name = (stringify!($key_name)).replace("_", "-");
                 if let Some(obj) = obj.find(&name[..]).and_then(|o| o.as_object()) {
@@ -799,6 +819,7 @@ impl Target {
         key!(codegen_backend);
         key!(default_hidden_visibility, bool);
         key!(embed_bitcode, bool);
+        try!(key!(va_list_kind, VaListKind));
 
         if let Some(array) = obj.find("abi-blacklist").and_then(Json::as_array) {
             for name in array.iter().filter_map(|abi| abi.as_string()) {
@@ -1002,6 +1023,7 @@ impl ToJson for Target {
         target_option_val!(codegen_backend);
         target_option_val!(default_hidden_visibility);
         target_option_val!(embed_bitcode);
+        target_option_val!(va_list_kind);
 
         if default.abi_blacklist != self.options.abi_blacklist {
             d.insert("abi-blacklist".to_string(), self.options.abi_blacklist.iter()

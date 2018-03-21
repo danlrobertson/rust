@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use LinkerFlavor;
-use target::{LinkArgs, TargetOptions};
+use target::{LinkArgs, TargetOptions, VaListKind};
 use std::default::Default;
 
 pub fn opts() -> TargetOptions {
@@ -34,6 +34,9 @@ pub fn opts() -> TargetOptions {
         crt_static_allows_dylibs: true,
         crt_static_respected: true,
         abi_return_struct_as_int: true,
+        // The `va_list` type is always the CharPtr variant regardless
+        // on windows.
+        va_list_kind: VaListKind::CharPtr,
 
         .. Default::default()
     }
