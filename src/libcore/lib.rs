@@ -197,6 +197,16 @@ pub mod option;
 pub mod raw;
 pub mod result;
 
+#[unstable(feature = "c_variadic",
+           reason = "the `c_variadic` feature has not been properly tested on \
+                     all supported platforms",
+           issue = "27745")]
+#[cfg(any(target_arch = "aarch64", target_arch = "arm", target_arch = "mips",
+          target_arch = "powerpc", target_arch = "powerpc64", target_arch = "x86",
+          target_arch = "x86_64"))]
+#[cfg(not(stage0))]
+pub mod ffi;
+
 pub mod slice;
 pub mod str;
 pub mod hash;

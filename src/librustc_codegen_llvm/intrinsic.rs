@@ -23,9 +23,9 @@ use glue;
 use type_::Type;
 use type_of::LayoutLlvmExt;
 use rustc::ty::{self, Ty};
-use rustc::ty::layout::{HasDataLayout, LayoutOf};
+use rustc::ty::layout::{self, Primitive, HasDataLayout, LayoutOf};
 use rustc::hir;
-use syntax::ast;
+use syntax::ast::{self, FloatTy};
 use syntax::symbol::Symbol;
 use builder::Builder;
 use value::Value;
@@ -78,6 +78,9 @@ fn get_simple_intrinsic(cx: &CodegenCx<'ll, '_>, name: &str) -> Option<&'ll Valu
         "roundf64" => "llvm.round.f64",
         "assume" => "llvm.assume",
         "abort" => "llvm.trap",
+        "va_start" => "llvm.va_start",
+        "va_copy" => "llvm.va_copy",
+        "va_end" => "llvm.va_end",
         _ => return None
     };
     Some(cx.get_intrinsic(&llvm_name))
@@ -140,6 +143,60 @@ pub fn codegen_intrinsic_call(
         "breakpoint" => {
             let llfn = cx.get_intrinsic(&("llvm.debugtrap"));
             bx.call(llfn, &[], None)
+        }
+        "va_arg" => {
+            match fn_ty.ret.layout.abi {
+                layout::Abi::Scalar(ref scalar) => {
+                    match scalar.value {
+                        Primitive::Int(..) |
+                        Primitive::Float(FloatTy::F64) |
+                        Primitive::Pointer => {
+                            let va_list = if (tcx.sess.target.target.arch == "aarch64" ||
+                                              tcx.sess.target.target.arch == "x86_64" ||
+                                              tcx.sess.target.target.arch == "powerpc") &&
+                                             !tcx.sess.target.target.options.is_like_windows {
+
+                                bx.load(args[0].immediate(), bx.tcx().data_layout.pointer_align)
+                            } else {
+                                args[0].immediate()
+                            };
+                            bx.va_arg(va_list, llret_ty)
+                        }
+                        // `va_arg` should never be used with the return type f32.
+                        Primitive::Float(FloatTy::F32) => {
+                            bug!("the va_arg intrinsic does not work with `f32`")
+                        }
+                    }
+                }
+                _ => {
+                    bug!("the va_arg intrinsic does not work with non-scalar types")
+                }
+            }
+        }
+        func @ "va_start" | func @ "va_end" => {
+            let va_list = if (tcx.sess.target.target.arch == "aarch64" ||
+                              tcx.sess.target.target.arch == "x86_64" ||
+                              tcx.sess.target.target.arch == "powerpc") &&
+                             !tcx.sess.target.target.options.is_like_windows {
+                bx.load(args[0].immediate(), bx.tcx().data_layout.pointer_align)
+            } else {
+                args[0].immediate()
+            };
+            let intrinsic = cx.get_intrinsic(&format!("llvm.{}", func));
+            bx.call(intrinsic, &[va_list], None)
+        }
+        "va_copy" => {
+            let (dst, src) = if (tcx.sess.target.target.arch == "aarch64" ||
+                                 tcx.sess.target.target.arch == "x86_64" ||
+                                 tcx.sess.target.target.arch == "powerpc") &&
+                                !tcx.sess.target.target.options.is_like_windows {
+                (bx.load(args[0].immediate(), bx.tcx().data_layout.pointer_align),
+                 bx.load(args[1].immediate(), bx.tcx().data_layout.pointer_align))
+            } else {
+                (args[0].immediate(), args[1].immediate())
+            };
+            let intrinsic = cx.get_intrinsic(&("llvm.va_copy"));
+            bx.call(intrinsic, &[dst, src], None)
         }
         "size_of" => {
             let tp_ty = substs.type_at(0);

@@ -14,6 +14,7 @@
 use intrinsics;
 use rustc::traits::{ObligationCause, ObligationCauseCode};
 use rustc::ty::{self, TyCtxt, Ty};
+use rustc::ty::subst::Subst;
 use rustc::util::nodemap::FxHashMap;
 use require_same_types;
 
@@ -81,6 +82,16 @@ pub fn check_intrinsic_type<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                                       it: &hir::ForeignItem) {
     let param = |n| tcx.mk_ty_param(n, Symbol::intern(&format!("P{}", n)).as_interned_str());
     let name = it.name.as_str();
+
+    let mk_va_list_ty = |idx| {
+        tcx.lang_items().va_list().map(|did| {
+            let region = tcx.mk_region(ty::ReLateBound(ty::INNERMOST, ty::BrAnon(idx)));
+            let env_region = ty::ReLateBound(ty::INNERMOST, ty::BrEnv);
+            let va_list_ty = tcx.type_of(did).subst(tcx, &[region.into()]);
+            tcx.mk_mut_ref(tcx.mk_region(env_region), va_list_ty)
+        })
+    };
+
     let (n_tps, inputs, output, unsafety) = if name.starts_with("atomic_") {
         let split : Vec<&str> = name.split('_').collect();
         assert!(split.len() >= 2, "Atomic intrinsic not correct format");
@@ -319,6 +330,37 @@ pub fn check_intrinsic_type<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>,
                     Abi::Rust,
                 ));
                 (0, vec![tcx.mk_fn_ptr(fn_ty), mut_u8, mut_u8], tcx.types.i32)
+            }
+
+            "va_start" | "va_end" => {
+                match mk_va_list_ty(0) {
+                    Some(va_list_ty) => (0, vec![va_list_ty], tcx.mk_nil()),
+                    None => bug!("va_list lang_item must be defined to use va_list intrinsics")
+                }
+            }
+
+            "va_copy" => {
+                match tcx.lang_items().va_list() {
+                    Some(did) => {
+                        let region0 = tcx.mk_region(ty::ReLateBound(ty::INNERMOST, ty::BrAnon(0)));
+                        let region1 = tcx.mk_region(ty::ReLateBound(ty::INNERMOST, ty::BrAnon(1)));
+                        let region2 = tcx.mk_region(ty::ReLateBound(ty::INNERMOST, ty::BrAnon(2)));
+                        let region3 = tcx.mk_region(ty::ReLateBound(ty::INNERMOST, ty::BrAnon(3)));
+                        let dst_ty = tcx.mk_mut_ref(region2,
+                                                    tcx.type_of(did).subst(tcx, &[region0.into()]));
+                        let src_ty = tcx.mk_imm_ref(region3,
+                                                    tcx.type_of(did).subst(tcx, &[region1.into()]));
+                        (0, vec![dst_ty, src_ty], tcx.mk_nil())
+                    }
+                    _ => bug!("va_list lang_item must be defined to use va_list intrinsics")
+                }
+            }
+
+            "va_arg" => {
+                match mk_va_list_ty(0) {
+                    Some(va_list_ty) => (1, vec![va_list_ty], param(0)),
+                    None => bug!("va_list lang_item must be defined to use va_list intrinsics")
+                }
             }
 
             "nontemporal_store" => {
