@@ -18,6 +18,7 @@ use context::CodegenCx;
 
 use syntax::ast;
 use rustc::ty::layout::{self, Align, Size};
+use rustc_back::VaListKind;
 
 use std::ffi::CString;
 use std::fmt;
@@ -296,5 +297,38 @@ impl Type {
 
     pub fn x86_mmx(cx: &CodegenCx) -> Type {
         ty!(llvm::LLVMX86MMXTypeInContext(cx.llcx))
+    }
+
+    pub fn va_list(cx: &CodegenCx) -> Type {
+        let i8p_t = Type::i8p(cx);
+        let isize_t = Type::isize(cx);
+        match cx.tcx.sess.target.target.options.va_list_kind {
+            VaListKind::CharPtr | VaListKind::VoidPtr => {
+                let mut va_list_t = Type::named_struct(cx, "__builtin_va_list");
+                va_list_t.set_struct_body(&[i8p_t], false);
+                va_list_t
+            },
+            VaListKind::X86_64Abi => {
+                let mut va_list_t = Type::named_struct(cx, "__builtin_va_list");
+                va_list_t.set_struct_body(&[i8p_t, i8p_t, i8p_t, i8p_t], false);
+                va_list_t
+            },
+            VaListKind::AArch64Abi => {
+                let mut va_list_t = Type::named_struct(cx, "__builtin_va_list");
+                va_list_t.set_struct_body(&[i8p_t, i8p_t, i8p_t, isize_t, isize_t], false);
+                va_list_t
+            },
+            VaListKind::PowerPcAbi => {
+                let i8_t = Type::i8(cx);
+                let i16_t = Type::i16(cx);
+                let mut va_list_t = Type::named_struct(cx, "__builtin_va_list");
+                va_list_t.set_struct_body(&[i8_t, i8_t, i16_t, i8p_t, i8p_t], false);
+                va_list_t
+            },
+            _ => {
+                // TODO: Don't do this
+                bug!("va_list: not supported for this target type");
+            }
+        }
     }
 }
