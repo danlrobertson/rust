@@ -77,6 +77,9 @@ fn get_simple_intrinsic(cx: &CodegenCx, name: &str) -> Option<ValueRef> {
         "roundf64" => "llvm.round.f64",
         "assume" => "llvm.assume",
         "abort" => "llvm.trap",
+        "va_start" => "llvm.va_start",
+        "va_copy" => "llvm.va_copy",
+        "va_end" => "llvm.va_end",
         _ => return None
     };
     Some(cx.get_intrinsic(&llvm_name))
@@ -137,6 +140,9 @@ pub fn trans_intrinsic_call<'a, 'tcx>(bx: &Builder<'a, 'tcx>,
         "breakpoint" => {
             let llfn = cx.get_intrinsic(&("llvm.debugtrap"));
             bx.call(llfn, &[], None)
+        }
+        "va_arg" => {
+            bx.va_arg(args[0].immediate(), llret_ty)
         }
         "size_of" => {
             let tp_ty = substs.type_at(0);

@@ -658,6 +658,11 @@ fn declare_intrinsic(cx: &CodegenCx, key: &str) -> Option<ValueRef> {
     ifn!("llvm.assume", fn(i1) -> void);
     ifn!("llvm.prefetch", fn(i8p, t_i32, t_i32, t_i32) -> void);
 
+    // variadic intrinsics
+    ifn!("llvm.va_start", fn(i8p) -> void);
+    ifn!("llvm.va_end", fn(i8p) -> void);
+    ifn!("llvm.va_copy", fn(i8p, i8p) -> void);
+
     if cx.sess().opts.debuginfo != NoDebugInfo {
         ifn!("llvm.dbg.declare", fn(Type::metadata(cx), Type::metadata(cx)) -> void);
         ifn!("llvm.dbg.value", fn(Type::metadata(cx), t_i64, Type::metadata(cx)) -> void);
