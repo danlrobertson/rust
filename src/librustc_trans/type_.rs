@@ -18,6 +18,7 @@ use context::CodegenCx;
 
 use syntax::ast;
 use rustc::ty::layout::{self, Align, Size};
+use rustc_back::VaListKind;
 
 use std::ffi::CString;
 use std::fmt;
@@ -296,5 +297,35 @@ impl Type {
 
     pub fn x86_mmx(cx: &CodegenCx) -> Type {
         ty!(llvm::LLVMX86MMXTypeInContext(cx.llcx))
+    }
+
+    pub fn va_list(cx: &CodegenCx, name: &str) -> Type {
+        let int_t = Type::c_int(cx);
+        let voidp_t = Type::i8p(cx);
+        match cx.tcx.sess.target.target.options.va_list_kind {
+            VaListKind::CharPtr => {
+                Type::i8p(cx)
+            },
+            VaListKind::VoidPtr => {
+                voidp_t
+            },
+            VaListKind::X86_64Abi => {
+                let mut va_list_t = Type::named_struct(cx, name);
+                va_list_t.set_struct_body(&[int_t, int_t, voidp_t, voidp_t], false);
+                va_list_t
+            },
+            VaListKind::AArch64Abi => {
+                let mut va_list_t = Type::named_struct(cx, name);
+                va_list_t.set_struct_body(&[voidp_t, voidp_t, voidp_t, int_t, int_t], false);
+                va_list_t
+            },
+            VaListKind::PowerPcAbi => {
+                let i8_t = Type::i8(cx);
+                let i16_t = Type::i16(cx);
+                let mut va_list_t = Type::named_struct(cx, name);
+                va_list_t.set_struct_body(&[i8_t, i8_t, i16_t, voidp_t, voidp_t], false);
+                va_list_t
+            },
+        }
     }
 }

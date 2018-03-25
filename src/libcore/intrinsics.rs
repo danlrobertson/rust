@@ -1398,4 +1398,22 @@ extern "rust-intrinsic" {
     /// Emits a `!nontemporal` store according to LLVM (see their docs).
     /// Probably will never become stable.
     pub fn nontemporal_store<T>(ptr: *mut T, val: T);
+
+    /// Initialize the arglist `ap` for processing via `va_arg`.
+    #[cfg(not(stage0))]
+    pub fn va_start(ap: *mut i8);
+
+    /// Destroy the arglist `ap` after initialization with `va_start` or
+    /// `va_copy`.
+    #[cfg(not(stage0))]
+    pub fn va_end(ap: *mut i8);
+
+    /// Copy the current location of arglist `ap0` to the arglist `ap1`.
+    #[cfg(not(stage0))]
+    pub fn va_copy(ap0: *const i8, ap1: *mut i8);
+
+    /// Loads an argument of type `T` from the `va_list` `ap` and increment the
+    /// argument `ap` points to.
+    #[cfg(not(stage0))]
+    pub fn va_arg<T: Copy>(ap: *mut i8) -> T;
 }
