@@ -455,6 +455,16 @@ impl<'a, 'gcx, 'tcx> ProbeContext<'a, 'gcx, 'tcx> {
                     self.assemble_inherent_impl_candidates_for_type(p.def_id());
                 }
             }
+            #[cfg(not(stage0))]
+            ty::TyAdt(def, _) => {
+                if Some(def.did) == lang_items.va_list() {
+                    let lang_def_id = lang_items.va_list();
+                    self.assemble_inherent_impl_for_primitive(lang_def_id);
+                } else {
+                    self.assemble_inherent_impl_candidates_for_type(def.did);
+                }
+            }
+            #[cfg(stage0)]
             ty::TyAdt(def, _) => {
                 self.assemble_inherent_impl_candidates_for_type(def.did);
             }

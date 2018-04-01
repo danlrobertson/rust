@@ -184,6 +184,7 @@ pub mod iter;
 pub mod option;
 pub mod raw;
 pub mod result;
+pub mod va_list;
 
 pub mod slice;
 pub mod str;

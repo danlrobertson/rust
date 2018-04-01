@@ -292,6 +292,7 @@ pub fn build_impls(cx: &DocContext, did: DefId, auto_traits: bool) -> Vec<clean:
         lang_items.slice_u8_impl(),
         lang_items.const_ptr_impl(),
         lang_items.mut_ptr_impl(),
+        lang_items.va_list(),
     ];
 
     for def_id in primitive_impls.iter().filter_map(|&def_id| def_id) {
