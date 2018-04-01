@@ -744,7 +744,17 @@ impl<'a, 'tcx> LayoutCx<'tcx, TyCtxt<'a, 'tcx, 'tcx>> {
                         else { StructKind::AlwaysSized }
                     };
 
-                    let mut st = univariant_uninterned(&variants[v], &def.repr, kind)?;
+                    let mut st = match tcx.lang_items().va_list() {
+                        Some(did) if did == def.did => {
+                            let variants = tcx.va_list_types().iter()
+                                                              .map(|x| self.layout_of(x).unwrap())
+                                                              .collect::<Vec<_>>();
+                            univariant_uninterned(&variants[..], &def.repr, kind)?
+                        }
+                        _ => {
+                            univariant_uninterned(&variants[v], &def.repr, kind)?
+                        }
+                    };
                     st.variants = Variants::Single { index: v };
                     // Exclude 0 from the range of a newtype ABI NonZero<T>.
                     if Some(def.did) == self.tcx.lang_items().non_zero() {
@@ -1612,6 +1622,13 @@ impl<'a, 'tcx, C> TyLayoutMethods<'tcx, C> for Ty<'tcx>
             // SIMD vector types.
             ty::TyAdt(def, ..) if def.repr.simd() => {
                 this.ty.simd_type(tcx)
+            }
+
+            ty::TyAdt(def, ..) if Some(def.did) == tcx.lang_items().va_list() => {
+                match this.variants {
+                    Variants::Single { index } => tcx.va_list_types()[index],
+                    _ => bug!("VaList must be a struct type with a single variant.")
+                }
             }
 
             // ADTs.

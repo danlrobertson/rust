@@ -103,9 +103,16 @@ fn uncached_llvm_type<'a, 'tcx>(cx: &CodegenCx<'a, 'tcx>,
                     Type::struct_(cx, &llfields, packed)
                 }
                 Some(ref name) => {
-                    let llty = Type::named_struct(cx, name);
-                    *defer = Some((llty, layout));
-                    llty
+                    match layout.ty.sty {
+                        ty::TyAdt(def, _) if Some(def.did) == cx.tcx.lang_items().va_list() => {
+                            Type::va_list(cx, name)
+                        }
+                        _ => {
+                            let llty = Type::named_struct(cx, name);
+                            *defer = Some((llty, layout));
+                            llty
+                        }
+                    }
                 }
             }
         }

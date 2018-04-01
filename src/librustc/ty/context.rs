@@ -53,6 +53,7 @@ use ty::BindingMode;
 use ty::CanonicalTy;
 use util::nodemap::{DefIdSet, ItemLocalMap};
 use util::nodemap::{FxHashMap, FxHashSet};
+use rustc_target::spec::VaListKind;
 use rustc_data_structures::accumulate_vec::AccumulateVec;
 use rustc_data_structures::stable_hasher::{HashStable, hash_stable_hashmap,
                                            StableHasher, StableHasherResult,
@@ -2693,6 +2694,34 @@ impl<'a, 'gcx, 'tcx> TyCtxt<'a, 'gcx, 'tcx> {
     {
         self.object_lifetime_defaults_map(id.owner)
             .and_then(|map| map.get(&id.local_id).cloned())
+    }
+
+    pub fn va_list_types(&self) -> Vec<Ty<'tcx>> {
+        match self.sess.target.target.options.va_list_kind {
+            VaListKind::CharPtr | VaListKind::VoidPtr => {
+                vec![self.mk_mut_ptr(self.types.i8)]
+            }
+            VaListKind::X86_64Abi => {
+                vec![self.types.i32,
+                     self.types.i32,
+                     self.mk_mut_ptr(self.types.i8),
+                     self.mk_mut_ptr(self.types.i8)]
+            }
+            VaListKind::AArch64Abi => {
+                vec![self.mk_mut_ptr(self.types.i8),
+                     self.mk_mut_ptr(self.types.i8),
+                     self.mk_mut_ptr(self.types.i8),
+                     self.types.i32,
+                     self.types.i32]
+            }
+            VaListKind::PowerPcAbi => {
+                vec![self.types.i8,
+                     self.types.i8,
+                     self.types.i16,
+                     self.mk_mut_ptr(self.types.i8),
+                     self.mk_mut_ptr(self.types.i8)]
+            }
+        }
     }
 }
 
