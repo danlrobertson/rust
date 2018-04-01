@@ -296,7 +296,14 @@ impl<'tcx> LayoutLlvmExt<'tcx> for TyLayout<'tcx> {
             }
             layout.llvm_type(cx)
         } else {
-            uncached_llvm_type(cx, *self, &mut defer)
+            match self.ty.sty {
+                ty::TyAdt(def, _) if Some(def.did) == cx.tcx.lang_items().va_list() => {
+                    Type::va_list(cx)
+                }
+                _ => {
+                    uncached_llvm_type(cx, *self, &mut defer)
+                }
+            }
         };
         debug!("--> mapped {:#?} to llty={:?}", self, llty);
 

@@ -268,6 +268,7 @@ language_item_table! {
     IndexMutTraitLangItem,           "index_mut",               index_mut_trait;
 
     UnsafeCellTypeLangItem,          "unsafe_cell",             unsafe_cell_type;
+    VaListTypeLangItem,              "va_list",                 va_list;
 
     DerefTraitLangItem,              "deref",                   deref_trait;
     DerefMutTraitLangItem,           "deref_mut",               deref_mut_trait;
@@ -298,7 +299,7 @@ language_item_table! {
 
     ExchangeMallocFnLangItem,        "exchange_malloc",         exchange_malloc_fn;
     BoxFreeFnLangItem,               "box_free",                box_free_fn;
-    DropInPlaceFnLangItem,             "drop_in_place",           drop_in_place_fn;
+    DropInPlaceFnLangItem,           "drop_in_place",           drop_in_place_fn;
 
     StartFnLangItem,                 "start",                   start_fn;
 
