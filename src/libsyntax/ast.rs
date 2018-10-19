@@ -565,6 +565,7 @@ impl Pat {
             PatKind::TupleStruct(_, ref s, _) | PatKind::Tuple(ref s, _) => {
                 s.iter().all(|p| p.walk(it))
             }
+            PatKind::Or(ref pats) => pats.iter().all(|p| p.walk(it)),
             PatKind::Box(ref s) | PatKind::Ref(ref s, _) | PatKind::Paren(ref s) => s.walk(it),
             PatKind::Slice(ref before, ref slice, ref after) => {
                 before.iter().all(|p| p.walk(it))
@@ -633,6 +634,9 @@ pub enum PatKind {
     /// If the `..` pattern fragment is present, then `Option<usize>` denotes its position.
     /// `0 <= position <= subpats.len()`.
     TupleStruct(Path, Vec<P<Pat>>, Option<usize>),
+
+    /// An or-pattern `A | B | C`.
+    Or(Vec<P<Pat>>),
 
     /// A possibly qualified path pattern.
     /// Unqualified path patterns `A::B::C` can legally refer to variants, structs, constants

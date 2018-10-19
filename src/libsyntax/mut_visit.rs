@@ -1026,6 +1026,7 @@ pub fn noop_visit_pat<T: MutVisitor>(pat: &mut P<Pat>, vis: &mut T) {
             visit_opt(sub, |sub| vis.visit_pat(sub));
         }
         PatKind::Lit(e) => vis.visit_expr(e),
+        PatKind::Or(pats) => pats.move_map(|p| vis.visit_pat(p)),
         PatKind::TupleStruct(path, pats, _ddpos) => {
             vis.visit_path(path);
             visit_vec(pats, |pat| vis.visit_pat(pat));

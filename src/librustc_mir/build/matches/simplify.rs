@@ -196,6 +196,10 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 candidate.match_pairs.push(MatchPair::new(place, subpattern));
                 Ok(())
             }
+
+            PatternKind::Or { .. } => {
+                Err(match_pair)
+            }
         }
     }
 }

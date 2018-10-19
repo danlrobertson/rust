@@ -4213,6 +4213,9 @@ impl<'a> LoweringContext<'a> {
                     ddpos,
                 )
             }
+            PatKind::Or(ref pats) => {
+                hir::PatKind::Or(pats.iter().map(|x| self.lower_pat(x)).collect())
+            }
             PatKind::Path(ref qself, ref path) => {
                 let qpath = self.lower_qpath(
                     p.id,

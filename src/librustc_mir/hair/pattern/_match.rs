@@ -75,9 +75,6 @@
 ///                     D((r_1, p_(i,2), .., p_(i,n)))
 ///                     D((r_2, p_(i,2), .., p_(i,n)))
 ///
-///     Note that the OR-patterns are not always used directly in Rust, but are used to derive
-///     the exhaustive integer matching rules, so they're written here for posterity.
-///
 /// The algorithm for computing `U`
 /// -------------------------------
 /// The algorithm is inductive (on the number of columns: i.e., components of tuple patterns).
@@ -1348,6 +1345,15 @@ fn pat_constructors<'tcx>(cx: &mut MatchCheckCtxt<'_, 'tcx>,
                 Some(vec![Slice(pat_len)])
             }
         }
+        PatternKind::Or { ref pats } => {
+            let mut v = vec![];
+            for pat in pats {
+                if let Some(ctors) = pat_constructors(cx, pat, pcx) {
+                    v.extend(ctors);
+                }
+            }
+            Some(v)
+        }
     }
 }
 
@@ -1865,6 +1871,18 @@ fn specialize<'p, 'a: 'p, 'tcx>(
                 _ => span_bug!(pat.span,
                     "unexpected ctor {:?} for slice pat", constructor)
             }
+        }
+
+        PatternKind::Or { ref pats } => {
+            let mut v = vec![];
+            for pat in pats {
+                let mut d = vec![pat];
+                d.extend(r);
+                if let Some(s) = specialize(cx, &d, constructor, wild_patterns) {
+                    v.extend(s);
+                }
+            }
+            Some(SmallVec::from_vec(v))
         }
     };
     debug!("specialize({:#?}, {:#?}) = {:#?}", r[0], wild_patterns, head);

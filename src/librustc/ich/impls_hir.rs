@@ -154,7 +154,6 @@ impl<'a> HashStable<StableHashingContext<'a>> for hir::Ty {
 }
 
 impl_stable_hash_for_spanned!(hir::FieldPat);
-
 impl_stable_hash_for_spanned!(hir::BinOpKind);
 
 impl_stable_hash_for!(struct hir::Stmt {
