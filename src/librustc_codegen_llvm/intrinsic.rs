@@ -24,12 +24,13 @@ use glue;
 use type_::Type;
 use type_of::LayoutLlvmExt;
 use rustc::ty::{self, Ty};
-use rustc::ty::layout::LayoutOf;
+use rustc::ty::layout::{self, Primitive, LayoutOf};
 use rustc::hir;
-use syntax::ast;
+use syntax::ast::{self, FloatTy};
 use syntax::symbol::Symbol;
 use builder::Builder;
 use value::Value;
+use va_arg::emit_va_arg;
 
 use rustc::session::Session;
 use syntax_pos::Span;
@@ -141,6 +142,87 @@ pub fn codegen_intrinsic_call(
         "breakpoint" => {
             let llfn = cx.get_intrinsic(&("llvm.debugtrap"));
             bx.call(llfn, &[], None)
+        }
+        func @ "va_start" | func @ "va_end" => {
+            let va_list = if (tcx.sess.target.target.arch == "aarch64" ||
+                              tcx.sess.target.target.arch == "x86_64" ||
+                              tcx.sess.target.target.arch == "powerpc") &&
+                             !tcx.sess.target.target.options.is_like_windows {
+                bx.load(args[0].immediate(), bx.tcx().data_layout.pointer_align)
+            } else {
+                args[0].immediate()
+            };
+            let intrinsic = cx.get_intrinsic(&format!("llvm.{}", func));
+            bx.call(intrinsic, &[va_list], None)
+        }
+        "va_copy" => {
+            if (tcx.sess.target.target.arch == "aarch64" ||
+                                 tcx.sess.target.target.arch == "x86_64" ||
+                                 tcx.sess.target.target.arch == "powerpc") &&
+                                !tcx.sess.target.target.options.is_like_windows {
+                let va_list_ty = match tcx.lang_items().va_list() {
+                    Some(did) => {
+                        tcx.type_of(did)
+                    }
+                    None => bug!("Must have the va_list languate item defined")
+                };
+                let impl_layout = match va_list_ty.sty {
+                    ty::Adt(def, _) if def.is_struct() => {
+                        let fields = &def.non_enum_variant().fields;
+                        match tcx.type_of(fields[0].did).sty {
+                            ty::Ref(_, element_ty, _) => match element_ty.sty {
+                                ty::Adt(..) => cx.layout_of(element_ty),
+                                _ => bug!("invalid va_list structure"),
+                            }
+                            _ => bug!("invalid va_list structure")
+                        }
+                    }
+                    _ => bug!("invalid va_list structure"),
+                };
+                let impl_ptr = bx.alloca(impl_layout.llvm_type(cx), "va_list_impl",
+                                         impl_layout.align);
+                let intrinsic = cx.get_intrinsic(&("llvm.va_copy"));
+                let src = bx.load(args[0].immediate(), bx.tcx().data_layout.pointer_align);
+                bx.call(intrinsic, &[impl_ptr, src], None);
+                bx.load(impl_ptr, impl_layout.align)
+            } else {
+                let impl_ptr = bx.alloca(Type::i8p(cx), "va_list_impl", bx.tcx().data_layout.pointer_align);
+                let intrinsic = cx.get_intrinsic(&("llvm.va_copy"));
+                bx.call(intrinsic, &[impl_ptr, args[0].immediate()], None);
+                impl_ptr
+            }
+        }
+        "va_arg" => {
+            match fn_ty.ret.layout.abi {
+                layout::Abi::Scalar(ref scalar) => {
+                    match scalar.value {
+                        Primitive::Int(..) => {
+                            if cx.size_of(ret_ty).bytes() < 4 {
+                                // va_arg should not be called on a integer type
+                                // less than 4 bytes in length. If it is, promote
+                                // the integer to a `i32` and truncate the result
+                                // back to the smaller type.
+                                let promoted_result = emit_va_arg(bx, args[0],
+                                                                  cx.tcx.types.i32);
+                                bx.trunc(promoted_result, llret_ty)
+                            } else {
+                                emit_va_arg(bx, args[0], ret_ty)
+                            }
+                        }
+                        Primitive::Float(FloatTy::F64) |
+                        Primitive::Pointer => {
+                            emit_va_arg(bx, args[0], ret_ty)
+                        }
+                        // `va_arg` should never be used with the return type f32.
+                        Primitive::Float(FloatTy::F32) => {
+                            bug!("the va_arg intrinsic does not work with `f32`")
+                        }
+                    }
+                }
+                _ => {
+                    bug!("the va_arg intrinsic does not work with non-scalar types")
+                }
+            }
         }
         "size_of" => {
             let tp_ty = substs.type_at(0);
