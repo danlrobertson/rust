@@ -1305,6 +1305,10 @@ impl<'a> LoweringContext<'a> {
                 }
             }
             TyKind::Mac(_) => panic!("TyMac should have been expanded by now."),
+            TyKind::VaArgs => {
+                debug!("lowering a path to a VaArgs");
+                hir::TyKind::VaArgs
+            },
         };
 
         let LoweredNodeId { node_id, hir_id } = self.lower_node_id(t.id);

@@ -349,6 +349,9 @@ pub fn walk_ty<'a, V: Visitor<'a>>(visitor: &mut V, typ: &'a Ty) {
             visitor.visit_anon_const(expression)
         }
         TyKind::Infer | TyKind::ImplicitSelf | TyKind::Err => {}
+        TyKind::VaArgs => {
+            debug!("walk_ty VaArgs");
+        }
         TyKind::Mac(ref mac) => {
             visitor.visit_mac(mac)
         }

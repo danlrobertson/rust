@@ -321,7 +321,8 @@ impl Sig for ast::Ty {
             ast::TyKind::Infer |
             ast::TyKind::Err |
             ast::TyKind::ImplicitSelf |
-            ast::TyKind::Mac(_) => Err("Ty"),
+            ast::TyKind::Mac(_) |
+            ast::TyKind::VaArgs => Err("Ty"),
         }
     }
 }

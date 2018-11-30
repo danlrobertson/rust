@@ -2148,6 +2148,7 @@ pub enum Type {
     Slice(Box<Type>),
     Array(Box<Type>, String),
     Never,
+    VaArgs,
     Unique(Box<Type>),
     RawPointer(Mutability, Box<Type>),
     BorrowedRef {
@@ -2186,6 +2187,7 @@ pub enum PrimitiveType {
     Reference,
     Fn,
     Never,
+    VaArgs,
 }
 
 #[derive(Clone, RustcEncodable, RustcDecodable, Copy, Debug)]
@@ -2349,6 +2351,7 @@ impl PrimitiveType {
             Reference => "reference",
             Fn => "fn",
             Never => "never",
+            VaArgs => "...",
         }
     }
 
@@ -2398,6 +2401,7 @@ impl Clean<Type> for hir::Ty {
 
         match self.node {
             TyKind::Never => Never,
+            TyKind::VaArgs => VaArgs,
             TyKind::Ptr(ref m) => RawPointer(m.mutbl.clean(cx), box m.ty.clean(cx)),
             TyKind::Rptr(ref l, ref m) => {
                 let lifetime = if l.is_elided() {
@@ -3472,6 +3476,9 @@ fn build_deref_target_impls(cx: &DocContext,
             Reference => None,
             Fn => None,
             Never => None,
+            // TODO(dlrobertson): Should this be None or the
+            // va_list language item.
+            VaArgs => tcx.lang_items().va_list(),
         };
         if let Some(did) = did {
             if !did.is_local() {

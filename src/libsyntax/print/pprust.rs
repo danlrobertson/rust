@@ -1110,6 +1110,9 @@ impl<'a> State<'a> {
             ast::TyKind::Mac(ref m) => {
                 self.print_mac(m)?;
             }
+            ast::TyKind::VaArgs => {
+                self.s.word("VaArgs")?;
+            }
         }
         self.end()
     }

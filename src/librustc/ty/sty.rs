@@ -1836,7 +1836,32 @@ impl<'a, 'gcx, 'tcx> TyS<'tcx> {
     pub fn fn_sig(&self, tcx: TyCtxt<'a, 'gcx, 'tcx>) -> PolyFnSig<'tcx> {
         match self.sty {
             FnDef(def_id, substs) => {
-                tcx.fn_sig(def_id).subst(tcx, substs)
+                let sig = tcx.fn_sig(def_id).subst(tcx, substs);
+                sig.map_bound(|mut sig| {
+                    if sig.variadic {
+                        let mut inputs = sig.inputs().to_vec();
+                        let va_list_did = match tcx.lang_items().va_list() {
+                            Some(did) => did,
+                            None => bug!("va_list lang_item must be defined to use variadic functions"),
+                        };
+                        match inputs.last() {
+                            Some(ty) => match ty.sty {
+                                Adt(def, _) if def.did == va_list_did => {
+                                    // Remove VaList from input
+                                    inputs.pop();
+                                    // Add output
+                                    inputs.push(sig.output());
+                                    sig.inputs_and_output = tcx.intern_type_list(&inputs);
+                                    sig
+                                }
+                                _ => sig,
+                            }
+                            None => sig,
+                        }
+                    } else {
+                        sig
+                    }
+                })
             }
             FnPtr(f) => f,
             _ => bug!("Ty::fn_sig() called on non-fn type: {:?}", self)

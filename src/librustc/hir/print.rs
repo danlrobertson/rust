@@ -442,6 +442,9 @@ impl<'a> State<'a> {
             hir::TyKind::Err => {
                 self.s.word("?")?;
             }
+            hir::TyKind::VaArgs => {
+                self.s.word("VaArgs")?;
+            }
         }
         self.end()
     }

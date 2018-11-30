@@ -1615,6 +1615,16 @@ impl<'o, 'gcx: 'tcx, 'tcx> dyn AstConv<'gcx, 'tcx> + 'o {
             hir::TyKind::Err => {
                 tcx.types.err
             }
+            hir::TyKind::VaArgs => {
+                debug!("ast to ty VaArgs");
+                match tcx.lang_items().va_list() {
+                    Some(did) => {
+                        let region = tcx.mk_region(ty::ReLateBound(ty::INNERMOST, ty::BrAnon(0)));
+                        tcx.at(ast_ty.span).type_of(did).subst(tcx, &[region.into()])
+                    },
+                    None => bug!("The va_list language item was not defined")
+                }
+            }
         };
 
         self.record_ty(ast_ty.hir_id, result_ty, ast_ty.span);

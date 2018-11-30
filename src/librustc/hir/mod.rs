@@ -1821,6 +1821,8 @@ pub enum TyKind {
     Infer,
     /// Placeholder for a type that has failed to be defined.
     Err,
+    /// Placeholder for `va_list` type.
+    VaArgs,
 }
 
 #[derive(Clone, RustcEncodable, RustcDecodable, Debug)]
