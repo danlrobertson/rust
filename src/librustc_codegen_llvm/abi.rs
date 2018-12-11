@@ -268,7 +268,7 @@ impl ArgTypeExt<'ll, 'tcx> for ArgType<'tcx, Ty<'tcx>> {
             val
         };
         match self.mode {
-            PassMode::Ignore => {},
+            PassMode::Ignore(_) => {},
             PassMode::Pair(..) => {
                 OperandValue::Pair(next(), next()).store(bx, dst);
             }
@@ -517,6 +517,16 @@ impl<'tcx> FnTypeExt<'tcx> for FnType<'tcx, Ty<'tcx>> {
             }
         };
 
+        // Store the index of the last argument. This is useful
+        // for working with C compatible variadic arguments.
+        let last_arg_idx = if sig.inputs().len() > 1 {
+            Some(sig.inputs().len() - 1)
+        } else if sig.variadic {
+            bug!("C compatible variadic functions must have at least one fixed argument");
+        } else {
+            None
+        };
+
         let arg_of = |ty: Ty<'tcx>, arg_idx: Option<usize>| {
             let is_return = arg_idx.is_none();
             let mut arg = mk_arg_type(ty, arg_idx);
@@ -526,7 +536,19 @@ impl<'tcx> FnTypeExt<'tcx> for FnType<'tcx, Ty<'tcx>> {
                 // The same is true for s390x-unknown-linux-gnu
                 // and sparc64-unknown-linux-gnu.
                 if is_return || rust_abi || (!win_x64_gnu && !linux_s390x && !linux_sparc64) {
-                    arg.mode = PassMode::Ignore;
+                    arg.mode = PassMode::Ignore(IgnoreMode::Zst);
+                }
+            }
+
+            // If the function is variadic, this is not the return value,
+            // and there is one or more fixed arguments, ensure that the
+            // VaList is ignored as an argument.
+            if sig.variadic {
+                match (last_arg_idx, arg_idx) {
+                    (Some(last_idx), Some(cur_idx)) if last_idx == cur_idx => {
+                        arg.mode = PassMode::Ignore(IgnoreMode::CVarArgs);
+                    },
+                    _ => {}
                 }
             }
 
@@ -656,7 +678,10 @@ impl<'tcx> FnTypeExt<'tcx> for FnType<'tcx, Ty<'tcx>> {
         );
 
         let llreturn_ty = match self.ret.mode {
-            PassMode::Ignore => cx.type_void(),
+            PassMode::Ignore(IgnoreMode::Zst) => cx.type_void(),
+            PassMode::Ignore(IgnoreMode::CVarArgs) => {
+                bug!("C variadic arguments should never be a return type")
+            }
             PassMode::Direct(_) | PassMode::Pair(..) => {
                 self.ret.layout.immediate_llvm_type(cx)
             }
@@ -674,7 +699,7 @@ impl<'tcx> FnTypeExt<'tcx> for FnType<'tcx, Ty<'tcx>> {
             }
 
             let llarg_ty = match arg.mode {
-                PassMode::Ignore => continue,
+                PassMode::Ignore(_) => continue,
                 PassMode::Direct(_) => arg.layout.immediate_llvm_type(cx),
                 PassMode::Pair(..) => {
                     llargument_tys.push(arg.layout.scalar_pair_element_llvm_type(cx, 0, true));
@@ -743,7 +768,7 @@ impl<'tcx> FnTypeExt<'tcx> for FnType<'tcx, Ty<'tcx>> {
                 apply(&ArgAttributes::new());
             }
             match arg.mode {
-                PassMode::Ignore => {}
+                PassMode::Ignore(_) => {}
                 PassMode::Direct(ref attrs) |
                 PassMode::Indirect(ref attrs, None) => apply(attrs),
                 PassMode::Indirect(ref attrs, Some(ref extra_attrs)) => {
@@ -790,7 +815,7 @@ impl<'tcx> FnTypeExt<'tcx> for FnType<'tcx, Ty<'tcx>> {
                 apply(&ArgAttributes::new());
             }
             match arg.mode {
-                PassMode::Ignore => {}
+                PassMode::Ignore(_) => {}
                 PassMode::Direct(ref attrs) |
                 PassMode::Indirect(ref attrs, None) => apply(attrs),
                 PassMode::Indirect(ref attrs, Some(ref extra_attrs)) => {

@@ -13,7 +13,7 @@ use rustc::ty::{self, Ty, TypeFoldable};
 use rustc::ty::layout::{self, LayoutOf, HasTyCtxt};
 use rustc::mir;
 use rustc::mir::interpret::EvalErrorKind;
-use rustc_target::abi::call::{ArgType, FnType, PassMode};
+use rustc_target::abi::call::{ArgType, FnType, PassMode, IgnoreMode};
 use rustc_target::spec::abi::Abi;
 use base;
 use MemFlags;
@@ -243,9 +243,13 @@ impl<'a, 'tcx: 'a, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
 
             mir::TerminatorKind::Return => {
                 let llval = match self.fn_ty.ret.mode {
-                    PassMode::Ignore | PassMode::Indirect(..) => {
+                    PassMode::Ignore(IgnoreMode::Zst) | PassMode::Indirect(..) => {
                         bx.ret_void();
                         return;
+                    }
+
+                    PassMode::Ignore(IgnoreMode::CVarArgs) => {
+                        bug!("C variadic arguments should never be the return type");
                     }
 
                     PassMode::Direct(_) | PassMode::Pair(..) => {

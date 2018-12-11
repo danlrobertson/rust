@@ -17,7 +17,7 @@ use rustc::session::config::DebugInfo;
 use base;
 use debuginfo::{self, VariableAccess, VariableKind, FunctionDebugContext};
 use rustc_mir::monomorphize::Instance;
-use rustc_target::abi::call::{FnType, PassMode};
+use rustc_target::abi::call::{FnType, PassMode, IgnoreMode};
 use traits::*;
 
 use syntax_pos::{DUMMY_SP, NO_EXPANSION, BytePos, Span};
@@ -456,6 +456,16 @@ fn arg_local_refs<'a, 'tcx: 'a, Bx: BuilderMethods<'a, 'tcx>>(
     } else {
         None
     };
+    // Store the index of the last argument. This is used to
+    // call va_start on the va_list instead of attempting
+    // to store_fn_arg.
+    let last_arg_idx = if fx.fn_ty.args.len() > 0 {
+        fx.fn_ty.args.len() - 1
+    } else if fx.fn_ty.variadic {
+        bug!("variadic functions must have at least one fixed arg");
+    } else {
+        0
+    };
 
     mir.args_iter().enumerate().map(|(arg_index, local)| {
         let arg_decl = &mir.local_decls[local];
@@ -520,8 +530,16 @@ fn arg_local_refs<'a, 'tcx: 'a, Bx: BuilderMethods<'a, 'tcx>>(
             // of putting everything in allocas just so we can use llvm.dbg.declare.
             let local = |op| LocalRef::Operand(Some(op));
             match arg.mode {
-                PassMode::Ignore => {
+                PassMode::Ignore(IgnoreMode::Zst) => {
                     return local(OperandRef::new_zst(bx.cx(), arg.layout));
+                }
+                PassMode::Ignore(IgnoreMode::CVarArgs) => {
+                    return local(
+                        OperandRef {
+                            val: OperandValue::Immediate(bx.cx().const_undef(bx.cx().immediate_backend_type(arg.layout))),
+                            layout: arg.layout
+                        }
+                    )
                 }
                 PassMode::Direct(_) => {
                     let llarg = bx.get_param(bx.llfn(), llarg_idx as c_uint);
@@ -570,7 +588,11 @@ fn arg_local_refs<'a, 'tcx: 'a, Bx: BuilderMethods<'a, 'tcx>>(
             tmp
         } else {
             let tmp = PlaceRef::alloca(bx, arg.layout, &name);
-            bx.store_fn_arg(arg, &mut llarg_idx, tmp);
+            if fx.fn_ty.variadic && arg_index == last_arg_idx {
+                bx.va_start(tmp.llval);
+            } else {
+                bx.store_fn_arg(arg, &mut llarg_idx, tmp);
+            }
             tmp
         };
         arg_scope.map(|scope| {

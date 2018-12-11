@@ -147,14 +147,17 @@ impl IntrinsicCallMethods<'tcx> for Builder<'a, 'll, 'tcx> {
                 let tp_ty = substs.type_at(0);
                 self.const_usize(self.size_of(tp_ty).bytes())
             }
-            func @ "va_start" | func @ "va_end" => {
-                let va_list = match (tcx.lang_items().va_list(), &result.layout.ty.sty) {
+            "va_start" => {
+                self.va_start(args[0].immediate())
+            }
+            "va_end" => {
+                let va_list = match (tcx.lang_items().va_list(), &arg_tys[0].sty) {
                     (Some(did), ty::Adt(def, _)) if def.did == did => args[0].immediate(),
                     (Some(_), _) => self.load(args[0].immediate(),
                                               tcx.data_layout.pointer_align.abi),
                     (None, _) => bug!("va_list language item must be defined")
                 };
-                let intrinsic = self.cx().get_intrinsic(&format!("llvm.{}", func));
+                let intrinsic = self.cx().get_intrinsic("llvm.va_end");
                 self.call(intrinsic, &[va_list], None)
             }
             "va_copy" => {
@@ -832,6 +835,24 @@ impl IntrinsicCallMethods<'tcx> for Builder<'a, 'll, 'tcx> {
         let expect = self.get_intrinsic(&"llvm.expect.i1");
         self.call(expect, &[cond, self.const_bool(expected)], None)
     }
+
+    fn va_start(&mut self, list: &'ll Value) -> &'ll Value {
+        self.count_insn("vastart");
+        let target = &self.cx.tcx.sess.target.target;
+        let arch = &target.arch;
+        let va_list = match (&**arch, target.options.is_like_windows) {
+            (_, true) => list,
+            ("aarch4", _) if target.target_os == "ios" => list,
+            ("aarch4", _) | ("x86_64", _) | ("powerpc", _) => {
+                self.load(list,
+                          self.tcx().data_layout.pointer_align.abi)
+            }
+            _ => list,
+        };
+        let intrinsic = self.cx().get_intrinsic("llvm.va_start");
+        self.call(intrinsic, &[va_list], None)
+    }
+
 }
 
 fn copy_intrinsic(

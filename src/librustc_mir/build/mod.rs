@@ -159,7 +159,7 @@ pub fn mir_build<'a, 'tcx>(tcx: TyCtxt<'a, 'tcx, 'tcx>, def_id: DefId) -> Mir<'t
                 (None, fn_sig.output())
             };
 
-            build::construct_fn(cx, id, arguments, safety, abi,
+            build::construct_fn(cx, id, arguments, safety, abi, // fn_sig.variadic,
                                 return_ty, yield_ty, return_ty_span, body)
         } else {
             build::construct_const(cx, body_id, return_ty_span)
@@ -640,6 +640,7 @@ fn construct_fn<'a, 'gcx, 'tcx, A>(hir: Cx<'a, 'gcx, 'tcx>,
                                    arguments: A,
                                    safety: Safety,
                                    abi: Abi,
+                                   //variadic: bool,
                                    return_ty: Ty<'gcx>,
                                    yield_ty: Option<Ty<'gcx>>,
                                    return_ty_span: Span,
@@ -690,6 +691,15 @@ fn construct_fn<'a, 'gcx, 'tcx, A>(hir: Cx<'a, 'gcx, 'tcx>,
             decl
         }).collect()
     });
+
+    //let arguments_len = if arguments.len() > 0 && variadic {
+    //    // Do not include the last argument in the argument list
+    //    // of a variadic function. It is not a true input. We have
+    //    // yet to create and initialize it.
+    //    arguments.len() - 1
+    //} else {
+    //    arguments.len()
+    //};
 
     let mut builder = Builder::new(hir,
         span,
@@ -871,7 +881,7 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                      -> BlockAnd<()>
     {
         // Allocate locals for the function arguments
-        for &ArgInfo(ty, _, pattern, _) in arguments.iter() {
+        for &ArgInfo(ty, _, pattern, _,) in arguments.iter() {
             // If this is a simple binding pattern, give the local a name for
             // debuginfo and so that error reporting knows that this is a user
             // variable. For any other pattern the pattern introduces new

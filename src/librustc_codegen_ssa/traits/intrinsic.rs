@@ -30,4 +30,5 @@ pub trait IntrinsicCallMethods<'tcx>: BackendTypes {
     fn abort(&mut self);
     fn assume(&mut self, val: Self::Value);
     fn expect(&mut self, cond: Self::Value, expected: bool) -> Self::Value;
+    fn va_start(&mut self, list: Self::Value) -> Self::Value;
 }

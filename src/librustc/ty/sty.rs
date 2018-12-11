@@ -955,7 +955,7 @@ impl<'tcx> PolyGenSig<'tcx> {
 ///
 /// - `inputs` is the list of arguments and their modes.
 /// - `output` is the return type.
-/// - `variadic` indicates whether this is a variadic function. (only true for foreign fns)
+/// - `variadic` indicates whether this is a variadic function.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, RustcEncodable, RustcDecodable)]
 pub struct FnSig<'tcx> {
     pub inputs_and_output: &'tcx List<Ty<'tcx>>,
@@ -1882,6 +1882,37 @@ impl<'a, 'gcx, 'tcx> TyS<'tcx> {
         match self.sty {
             FnDef(def_id, substs) => {
                 tcx.fn_sig(def_id).subst(tcx, substs)
+                //let sig = tcx.fn_sig(def_id).subst(tcx, substs);
+                //sig.map_bound(|mut sig| {
+                //    if sig.variadic {
+                //        // Ensure that we do not include the last argument of
+                //        // a variadic function in the list of inputs to the
+                //        // function signature. The variadic argument is not
+                //        // an actual input, we need to create and initialize
+                //        // it later.
+                //        let mut inputs = sig.inputs().to_vec();
+                //        let va_list_did = match tcx.lang_items().va_list() {
+                //            Some(did) => did,
+                //            None => bug!("va_list lang_item must be defined to use variadic functions"),
+                //        };
+                //        match inputs.last() {
+                //            Some(ty) => match ty.sty {
+                //                Adt(def, _) if def.did == va_list_did => {
+                //                    // Remove VaList from input
+                //                    inputs.pop();
+                //                    // Add output
+                //                    inputs.push(sig.output());
+                //                    sig.inputs_and_output = tcx.intern_type_list(&inputs);
+                //                    sig
+                //                }
+                //                _ => sig,
+                //            }
+                //            None => sig,
+                //        }
+                //    } else {
+                //        sig
+                //    }
+                //})
             }
             FnPtr(f) => f,
             _ => bug!("Ty::fn_sig() called on non-fn type: {:?}", self)

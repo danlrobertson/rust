@@ -1091,8 +1091,40 @@ fn check_fn<'a, 'gcx, 'tcx>(inherited: &'a Inherited<'a, 'gcx, 'tcx>,
     let outer_node_id = fcx.tcx.hir().as_local_node_id(outer_def_id).unwrap();
     GatherLocalsVisitor { fcx: &fcx, parent_id: outer_node_id, }.visit_body(body);
 
+    let va_list_did = match fcx.tcx.lang_items().va_list() {
+        Some(did) => did,
+        None => bug!("va_list lang item must be defined to use varargs"),
+    };
+
     // Add formal parameters.
-    for (arg_ty, arg) in fn_sig.inputs().iter().zip(&body.arguments) {
+    for (i, (arg_ty, arg)) in fn_sig.inputs().iter().zip(&body.arguments).enumerate() {
+        let arg_ty = if arg.variadic {
+            match arg_ty.sty {
+                ty::Adt(ref def, _) if def.did == va_list_did => {
+                    // If the argument is the "handler" for the variadic
+                    // arguments. Generate the `VaList` type with a scoped
+                    // region corresponding to the functions body to ensure
+                    // the list cannot escape the function.
+                    let body_id = fcx.tcx.hir().body_owned_by(fn_id);
+                    let body = fcx.tcx.hir().body(body_id);
+                    let region = fcx.tcx.mk_region(ty::ReScope(region::Scope {
+                        id: body.value.hir_id.local_id,
+                        data: region::ScopeData::Destruction,
+                    }));
+                    fcx.tcx.type_of(va_list_did).subst(fcx.tcx, &[region.into()])
+                }
+                _ => {
+                    fcx.tcx.sess.span_err(
+                        decl.inputs[i].span,
+                        "argument should be VaList",
+                    );
+                    arg_ty
+                }
+            }
+        } else {
+            arg_ty
+        };
+
         // Check the pattern.
         fcx.check_pat_walk(&arg.pat, arg_ty,
             ty::BindingMode::BindByValue(hir::Mutability::MutImmutable), true);

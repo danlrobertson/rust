@@ -959,7 +959,8 @@ impl_stable_hash_for!(enum hir::StmtKind {
 impl_stable_hash_for!(struct hir::Arg {
     pat,
     id,
-    hir_id
+    hir_id,
+    variadic,
 });
 
 impl<'a> HashStable<StableHashingContext<'a>> for hir::Body {
