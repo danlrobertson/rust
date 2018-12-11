@@ -974,7 +974,8 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         ast::Arg {
             ty,
             pat: arg_pat,
-            id: ast::DUMMY_NODE_ID
+            id: ast::DUMMY_NODE_ID,
+            variadic: false,
         }
     }
 

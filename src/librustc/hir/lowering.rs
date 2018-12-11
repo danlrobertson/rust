@@ -1983,6 +1983,7 @@ impl<'a> LoweringContext<'a> {
             id: node_id,
             hir_id,
             pat: self.lower_pat(&arg.pat),
+            variadic: arg.variadic
         }
     }
 

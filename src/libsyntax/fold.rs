@@ -593,11 +593,12 @@ pub fn noop_fold_meta_item<T: Folder>(mi: MetaItem, fld: &mut T) -> MetaItem {
     }
 }
 
-pub fn noop_fold_arg<T: Folder>(Arg {id, pat, ty}: Arg, fld: &mut T) -> Arg {
+pub fn noop_fold_arg<T: Folder>(Arg {id, pat, ty, variadic}: Arg, fld: &mut T) -> Arg {
     Arg {
         id: fld.new_id(id),
         pat: fld.fold_pat(pat),
-        ty: fld.fold_ty(ty)
+        ty: fld.fold_ty(ty),
+        variadic: variadic
     }
 }
 

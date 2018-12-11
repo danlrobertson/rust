@@ -531,7 +531,7 @@ fn dummy_arg(span: Span) -> Arg {
         span,
         id: ast::DUMMY_NODE_ID
     };
-    Arg { ty: P(ty), pat: pat, id: ast::DUMMY_NODE_ID }
+    Arg { ty: P(ty), pat: pat, id: ast::DUMMY_NODE_ID, variadic: false }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1407,7 +1407,7 @@ impl<'a> Parser<'a> {
                 // definition...
 
                 // We don't allow argument names to be left off in edition 2018.
-                p.parse_arg_general(p.span.rust_2018())
+                p.parse_arg_general(p.span.rust_2018(), false)
             })?;
             generics.where_clause = self.parse_where_clause()?;
 
@@ -1820,7 +1820,7 @@ impl<'a> Parser<'a> {
 
     /// This version of parse arg doesn't necessarily require
     /// identifier names.
-    fn parse_arg_general(&mut self, require_name: bool) -> PResult<'a, Arg> {
+    fn parse_arg_general(&mut self, require_name: bool, allow_variadic: bool) -> PResult<'a, Arg> {
         maybe_whole!(self, NtArg, |x| x);
 
         if let Ok(Some(_)) = self.parse_self_arg() {
@@ -1831,7 +1831,7 @@ impl<'a> Parser<'a> {
             return Err(err);
         }
 
-        let (pat, ty) = if require_name || self.is_named_argument() {
+        let (pat, ty, variadic) = if require_name || self.is_named_argument() {
             debug!("parse_arg_general parse_pat (require_name:{})",
                    require_name);
             self.eat_incorrect_doc_comment("method arguments");
@@ -1858,11 +1858,23 @@ impl<'a> Parser<'a> {
             }
 
             self.eat_incorrect_doc_comment("a method argument's type");
-            (pat, self.parse_ty()?)
+            let variadic = if allow_variadic && self.token == token::DotDotDot {
+                self.bump();
+                true
+            } else {
+                false
+            };
+            (pat, self.parse_ty()?, variadic)
         } else {
             debug!("parse_arg_general ident_to_pat");
             let parser_snapshot_before_ty = self.clone();
             self.eat_incorrect_doc_comment("a method argument's type");
+            let variadic = if allow_variadic && self.token == token::DotDotDot {
+                self.bump();
+                true
+            } else {
+                false
+            };
             let mut ty = self.parse_ty();
             if ty.is_ok() && self.token == token::Colon {
                 // This wasn't actually a type, but a pattern looking like a type,
@@ -1878,7 +1890,7 @@ impl<'a> Parser<'a> {
                             BindingMode::ByValue(Mutability::Immutable), ident, None),
                         span: ty.span,
                     });
-                    (pat, ty)
+                    (pat, ty, variadic)
                 }
                 Err(mut err) => {
                     // Recover from attempting to parse the argument as a type without pattern.
@@ -1907,17 +1919,17 @@ impl<'a> Parser<'a> {
                         span: pat.span,
                         id: ast::DUMMY_NODE_ID
                     });
-                    (pat, ty)
+                    (pat, ty, variadic)
                 }
             }
         };
 
-        Ok(Arg { ty, pat, id: ast::DUMMY_NODE_ID })
+        Ok(Arg { ty, pat, id: ast::DUMMY_NODE_ID, variadic })
     }
 
     /// Parse a single function argument
     crate fn parse_arg(&mut self) -> PResult<'a, Arg> {
-        self.parse_arg_general(true)
+        self.parse_arg_general(true, false)
     }
 
     /// Parse an argument in a lambda header e.g., |arg, arg|
@@ -1935,7 +1947,8 @@ impl<'a> Parser<'a> {
         Ok(Arg {
             ty: t,
             pat,
-            id: ast::DUMMY_NODE_ID
+            id: ast::DUMMY_NODE_ID,
+            variadic: false
         })
     }
 
@@ -5473,8 +5486,22 @@ impl<'a> Parser<'a> {
                             }
                         }
                     } else {
-                        match p.parse_arg_general(named_args) {
-                            Ok(arg) => Ok(Some(arg)),
+                        match p.parse_arg_general(named_args, allow_variadic) {
+                            Ok(arg) => {
+                                if arg.variadic {
+                                    variadic = true;
+                                    if p.token != token::CloseDelim(token::Paren) {
+                                        let span = p.span;
+                                        p.span_err(span,
+                                                   "`...` must be last in argument list for variadic function");
+                                        Ok(None)
+                                    } else {
+                                        Ok(Some(arg))
+                                    }
+                                } else {
+                                    Ok(Some(arg))
+                                }
+                            },
                             Err(mut e) => {
                                 e.emit();
                                 let lo = p.prev_span;
@@ -5708,7 +5735,12 @@ impl<'a> Parser<'a> {
                      abi: Abi)
                      -> PResult<'a, ItemInfo> {
         let (ident, mut generics) = self.parse_fn_header()?;
-        let decl = self.parse_fn_decl(false)?;
+        let allow_variadic = if abi == Abi::C && unsafety == Unsafety::Unsafe {
+            true
+        } else {
+            false
+        };
+        let decl = self.parse_fn_decl(allow_variadic)?;
         generics.where_clause = self.parse_where_clause()?;
         let (inner_attrs, body) = self.parse_inner_attrs_and_block()?;
         let header = FnHeader { unsafety, asyncness, constness, abi };

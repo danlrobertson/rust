@@ -1850,6 +1850,7 @@ pub struct Arg {
     pub pat: P<Pat>,
     pub id: NodeId,
     pub hir_id: HirId,
+    pub variadic: bool,
 }
 
 /// Represents the header (not the body) of a function declaration

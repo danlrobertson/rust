@@ -1656,6 +1656,7 @@ pub struct Arg {
     pub ty: P<Ty>,
     pub pat: P<Pat>,
     pub id: NodeId,
+    pub variadic: bool,
 }
 
 /// Alternative representation for `Arg`s describing `self` parameter of methods.
@@ -1715,6 +1716,7 @@ impl Arg {
             }),
             ty,
             id: DUMMY_NODE_ID,
+            variadic: false,
         };
         match eself.node {
             SelfKind::Explicit(ty, mutbl) => arg(mutbl, ty),
