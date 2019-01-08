@@ -4,6 +4,7 @@ use rustc::traits::ObligationCause;
 
 use syntax::ast;
 use syntax::util::parser::PREC_POSTFIX;
+use syntax::source_map::SourceMap;
 use syntax_pos::Span;
 use rustc::hir;
 use rustc::hir::def::Def;
@@ -191,7 +192,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     /// ```
     /// opt.map(|arg| { takes_ref(arg) });
     /// ```
-    fn can_use_as_ref(&self, expr: &hir::Expr) -> Option<(Span, &'static str, String)> {
+    fn can_use_as_ref(&self, expr: &hir::Expr, cm: &SourceMap) -> Option<(Span, &'static str, String)> {
         if let hir::ExprKind::Path(hir::QPath::Resolved(_, ref path)) = expr.node {
             if let hir::def::Def::Local(id) = path.def {
                 let parent = self.tcx.hir().get_parent_node(id);
@@ -214,10 +215,12 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                             self_ty.starts_with("std::option::Option") ||
                             self_ty.starts_with("std::result::Result")
                         ) && (name == "map" || name == "and_then");
-                        if is_as_ref_able {
-                            return Some((span.shrink_to_lo(),
-                                         "consider using `as_ref` instead",
-                                         "as_ref().".into()));
+                        match (is_as_ref_able, cm.span_to_snippet(*span)) {
+                            (true, Ok(src)) => {
+                                return Some((span.shrink_to_lo(), "consider using `as_ref` instead",
+                                             format!("as_ref().{}", src)));
+                            },
+                            _ => ()
                         }
                     }
                 }
@@ -315,7 +318,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                             src
                         };
 
-                        if let Some(sugg) = self.can_use_as_ref(expr) {
+                        if let Some(sugg) = self.can_use_as_ref(expr, &cm) {
                             return Some(sugg);
                         }
                         return Some(match mutability {
