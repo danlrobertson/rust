@@ -59,6 +59,8 @@ pub struct ParseSess {
     pub let_chains_spans: Lock<Vec<Span>>,
     // Places where `async || ..` exprs were used and should be feature gated.
     pub async_closure_spans: Lock<Vec<Span>>,
+    // Places where or-patterns e.g. `Some(Foo | Bar)` were used and should be feature gated.
+    pub or_pattern_spans: Lock<Vec<Span>>,
 }
 
 impl ParseSess {
@@ -87,6 +89,7 @@ impl ParseSess {
             param_attr_spans: Lock::new(Vec::new()),
             let_chains_spans: Lock::new(Vec::new()),
             async_closure_spans: Lock::new(Vec::new()),
+            or_pattern_spans: Lock::new(Vec::new()),
         }
     }
 

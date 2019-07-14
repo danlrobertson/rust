@@ -577,6 +577,9 @@ declare_features! (
     // Allows the use of `#[cfg(doctest)]`, set when rustdoc is collecting doctests
     (active, cfg_doctest, "1.37.0", Some(62210), None),
 
+    // Allows the use of or-patterns, e.g. `0 | 1`.
+    (active, or_patterns, "1.37.0", Some(54883), None),
+
     // -------------------------------------------------------------------------
     // feature-group-end: actual feature gates
     // -------------------------------------------------------------------------
@@ -589,6 +592,7 @@ const INCOMPLETE_FEATURES: &[Symbol] = &[
     sym::impl_trait_in_bindings,
     sym::generic_associated_types,
     sym::const_generics,
+    sym::or_patterns,
     sym::let_chains,
 ];
 
@@ -2574,6 +2578,17 @@ pub fn check_crate(krate: &ast::Crate,
         *span,
         "async closures are unstable"
     ));
+
+    sess
+        .or_pattern_spans
+        .borrow()
+        .iter()
+        .for_each(|span| gate_feature!(
+            &ctx,
+            or_patterns,
+            *span,
+            "or_patterns syntax is experimental"
+        ));
 
     let visitor = &mut PostExpansionVisitor {
         context: &ctx,

@@ -3578,7 +3578,39 @@ impl<'a> Parser<'a> {
                     err.emit();
                 }
             } else if !self.check(&token::CloseDelim(token::Paren)) {
-                fields.push(self.parse_pat(None)?);
+                let field_pat = self.parse_pat(None)?;
+                // If an or-pattern is used, collect all of the field patterns and
+                // return them as a PatKind::Or for the given field.
+                if self.check(&token::BinOp(token::Or)) {
+                    let lo = self.prev_span;
+                    let mut or_patterns = vec![field_pat];
+                    // `..` does not make sense in a or-pattern. If `ddpos` is set
+                    // throw an error and keep on parsing.
+                    if ddpos.is_some() {
+                        self.struct_span_err(
+                            self.prev_span,
+                            "`..` not valid in a or-pattern",
+                        )
+                            .span_label(self.prev_span, "not valid in or-pattern")
+                            .emit();
+                    }
+                    while self.eat(&token::BinOp(token::Or)) {
+                        // As long as we keep eating `|` tokens, keep appending the
+                        // parsed patterns to the or-patterns list.
+                        let pat = self.parse_pat(None)?;
+                        or_patterns.push(pat);
+                    }
+                    let or_pattern_span = lo.to(self.prev_span);
+                    // Push the or-pattern to the list of field patterns.
+                    self.sess.or_pattern_spans.borrow_mut().push(or_pattern_span);
+                    fields.push(P(Pat {
+                        node: PatKind::Or(or_patterns),
+                        span: or_pattern_span,
+                        id: ast::DUMMY_NODE_ID
+                    }));
+                } else {
+                    fields.push(field_pat);
+                }
             } else {
                 break
             }

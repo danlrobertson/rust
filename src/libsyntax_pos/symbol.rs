@@ -466,6 +466,7 @@ symbols! {
         option_env,
         opt_out_copy,
         or,
+        or_patterns,
         Ord,
         Ordering,
         Output,

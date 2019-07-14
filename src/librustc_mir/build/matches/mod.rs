@@ -660,7 +660,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             PatternKind::Or { ref pats } => {
                 // FIXME(#47184): extract or handle `pattern_user_ty` somehow
                 for pat in pats {
-                    self.visit_bindings(&pat, &pattern_user_ty.clone(), f);
+                    self.visit_bindings(&pat, pattern_user_ty.clone(), f);
                 }
             }
         }
