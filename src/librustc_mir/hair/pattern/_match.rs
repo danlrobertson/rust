@@ -1874,15 +1874,17 @@ fn specialize<'p, 'a: 'p, 'tcx>(
         }
 
         PatternKind::Or { ref pats } => {
-            let mut v = vec![];
+            let mut specialized_pats = vec![];
             for pat in pats {
-                let mut d = vec![pat];
-                d.extend(r);
-                if let Some(s) = specialize(cx, &d, constructor, wild_patterns) {
-                    v.extend(s);
+                if let Some(s) = specialize(cx, &[pat], constructor, wild_patterns) {
+                    specialized_pats.extend(s);
                 }
             }
-            Some(SmallVec::from_vec(v))
+            if specialized_pats.is_empty() {
+                None
+            } else {
+                Some(SmallVec::from_vec(specialized_pats))
+            }
         }
     };
     debug!("specialize({:#?}, {:#?}) = {:#?}", r[0], wild_patterns, head);

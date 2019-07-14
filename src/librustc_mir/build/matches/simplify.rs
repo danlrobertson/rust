@@ -197,7 +197,16 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 Ok(())
             }
 
-            PatternKind::Or { .. } => {
+            PatternKind::Or { ref pats } => {
+                // Attempt to simplify the subpatterns of an or-pattern.
+                for subpat in pats {
+                    if let Ok(_) = self.simplify_match_pair(
+                        MatchPair::new(match_pair.place.clone(), subpat),
+                        candidate
+                    ) {
+                        return Ok(());
+                    }
+                }
                 Err(match_pair)
             }
         }

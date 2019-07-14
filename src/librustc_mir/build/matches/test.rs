@@ -6,7 +6,7 @@
 // the candidates based on the result.
 
 use crate::build::Builder;
-use crate::build::matches::{Candidate, MatchPair, Test, TestKind};
+use crate::build::matches::{Candidate, MatchPair, Test, TestKind, TargetBlockBuilder};
 use crate::hair::*;
 use crate::hair::pattern::compare_const_vals;
 use rustc_data_structures::bit_set::BitSet;
@@ -20,54 +20,218 @@ use syntax_pos::symbol::sym;
 
 use std::cmp::Ordering;
 
+#[derive(Debug)]
+struct TestTargetBlockBuilder<'tcx, 'a> {
+    test: &'a Test<'tcx>,
+    source_info: SourceInfo,
+    success: BasicBlock,
+    fail: BasicBlock,
+}
+
+impl<'tcx, 'a> TargetBlockBuilder<'tcx> for TestTargetBlockBuilder<'tcx, 'a> {
+    fn target_blocks(self, this: &mut Builder<'_, 'tcx>) -> Vec<BasicBlock> {
+        let num_targets = self.test.targets();
+        let mut blocks: Vec<BasicBlock> = Vec::with_capacity(num_targets);
+
+        // Create the otherwise block
+        let otherwise_block = this.cfg.start_new_block();
+        this.cfg.terminate(otherwise_block, self.source_info, TerminatorKind::Goto {
+            target: self.fail
+        });
+
+        match self.test.kind {
+            // For a varant switch on an enum, targets for all missing discriminants
+            // in the test's variants should be the otherwise block.
+            TestKind::Switch { ref variants, ref adt_def } => {
+                for (idx, _) in adt_def.discriminants(this.hir.tcx()) {
+                    if variants.contains(idx) {
+                        let block = this.cfg.start_new_block();
+                            this.cfg.terminate(block, self.source_info, TerminatorKind::Goto {
+                            target: self.success
+                        });
+                        blocks.push(block);
+                    } else {
+                        blocks.push(otherwise_block);
+                    }
+                }
+            }
+            // For most test kinds all but the last block are success blocks
+            _ => {
+                // Each success block for the subtest should jump to the success block.
+                for _ in 0..(num_targets - 1) {
+                    let block = this.cfg.start_new_block();
+                    this.cfg.terminate(block, self.source_info, TerminatorKind::Goto {
+                        target: self.success
+                    });
+                    blocks.push(block);
+                }
+            }
+        }
+
+        // The last block for the subtest should jump to the failure block.
+        blocks.push(otherwise_block);
+
+        blocks
+    }
+}
+
 impl<'a, 'tcx> Builder<'a, 'tcx> {
-    /// Identifies what test is needed to decide if `match_pair` is applicable.
-    ///
-    /// It is a bug to call this with a simplifiable pattern.
-    pub fn test<'pat>(&mut self, match_pair: &MatchPair<'pat, 'tcx>) -> Test<'tcx> {
+    /// Lower a `Vec` of `MatchPair`s
+    fn lower_pairs<'pat>(
+        &mut self,
+        match_pairs: Vec<MatchPair<'pat, 'tcx>>
+    ) -> Vec<(Option<Test<'tcx>>, MatchPair<'pat, 'tcx>)> {
+        let mut tests: Vec<(Option<Test<'tcx>>, MatchPair<'pat, 'tcx>)> = Vec::new();
+        for pair in match_pairs {
+            let mut test_kind = match self.lower_pair(&pair) {
+                Some(kind) => kind,
+                None => {
+                    tests.push((None, pair));
+                    continue;
+                }
+            };
+
+            // If the current `TestKind` is a switch, we should
+            // only have one that exists in the tests vector
+            // that is populated with all of the variants. Look
+            // for a pre-existing test.
+            match test_kind {
+                TestKind::SwitchInt {
+                    switch_ty: ref mut new_switch_ty,
+                    options: ref mut new_options,
+                    indices: ref mut new_indices,
+                    ..
+                } => {
+                    let mut found = false;
+                    for (test_opt, test_pair) in tests.iter_mut() {
+                        let test = match test_opt {
+                            Some(test) if test_pair.place == pair.place => test,
+                            _ => continue,
+                        };
+                        match test.kind {
+                            TestKind::SwitchInt {
+                                switch_ty: ref mut found_switch_ty,
+                                options: ref mut found_options,
+                                indices: ref mut found_indices,
+                                ..
+                            } => {
+                                self.add_cases_to_switch_from_pat(
+                                    pair.pattern,
+                                    found_switch_ty,
+                                    found_options,
+                                    found_indices
+                                );
+                                found = true;
+                                break;
+                            }
+                            _ => (),
+                        }
+                    }
+                    // If a pre-existing test was not found, add a new
+                    // test.
+                    if !found {
+                        self.add_cases_to_switch_from_pat(
+                            pair.pattern,
+                            new_switch_ty,
+                            new_options,
+                            new_indices
+                        );
+                        tests.push((
+                            Some(Test { span: pair.pattern.span, kind: test_kind }),
+                            pair
+                        ));
+                    }
+                }
+                TestKind::Switch { variants: ref mut new_variants, .. } => {
+                    match *pair.pattern.kind {
+                        PatternKind::Variant { ref subpatterns, .. } => {
+                            let mut found = false;
+                            if subpatterns.is_empty() {
+                                for (test_opt, test_pair) in tests.iter_mut() {
+                                    let test = match test_opt {
+                                        Some(test) if test_pair.place == pair.place => test,
+                                        _ => continue,
+                                    };
+                                    match test.kind {
+                                        TestKind::Switch {
+                                            variants: ref mut found_variants,
+                                            ..
+                                        } => match *test_pair.pattern.kind {
+                                            PatternKind::Variant { ref subpatterns, .. }
+                                                    if subpatterns.is_empty() => {
+                                                self.add_variants_to_switch_from_pat(
+                                                    pair.pattern,
+                                                    found_variants
+                                                );
+                                                found = true;
+                                                break;
+                                            }
+                                            _ => { continue; }
+                                        }
+                                        _ => (),
+                                    }
+                                }
+                            }
+                            // If a pre-existing test was not found, add a new
+                            // test.
+                            if !found {
+                                self.add_variants_to_switch_from_pat(
+                                    pair.pattern,
+                                    new_variants
+                                );
+                                tests.push((
+                                    Some(Test { span: pair.pattern.span, kind: test_kind }),
+                                    pair
+                                ));
+                            }
+                        }
+                        _ => bug!("Created Switch from a {:?}", pair.pattern),
+                    }
+                }
+                _ => {
+                    tests.push((
+                        Some(Test { span: pair.pattern.span, kind: test_kind }),
+                        pair
+                    ));
+                }
+            }
+        }
+        tests
+    }
+
+    /// Lower a patterns `PatternKind` into a `TestKind`.
+    fn lower_pair<'pat>(&mut self, match_pair: &MatchPair<'pat, 'tcx>) -> Option<TestKind<'tcx>> {
         match *match_pair.pattern.kind {
             PatternKind::Variant { ref adt_def, substs: _, variant_index: _, subpatterns: _ } => {
-                Test {
-                    span: match_pair.pattern.span,
-                    kind: TestKind::Switch {
-                        adt_def: adt_def.clone(),
-                        variants: BitSet::new_empty(adt_def.variants.len()),
-                    },
-                }
+                Some(TestKind::Switch {
+                    adt_def: adt_def.clone(),
+                    variants: BitSet::new_empty(adt_def.variants.len()),
+                })
             }
 
             PatternKind::Constant { .. } if is_switch_ty(match_pair.pattern.ty) => {
                 // For integers, we use a `SwitchInt` match, which allows
                 // us to handle more cases.
-                Test {
-                    span: match_pair.pattern.span,
-                    kind: TestKind::SwitchInt {
-                        switch_ty: match_pair.pattern.ty,
+                Some(TestKind::SwitchInt {
+                    switch_ty: match_pair.pattern.ty,
 
-                        // these maps are empty to start; cases are
-                        // added below in add_cases_to_switch
-                        options: vec![],
-                        indices: Default::default(),
-                    }
-                }
+                    // these maps are empty to start; cases are
+                    // added below in add_cases_to_switch
+                    options: vec![],
+                    indices: Default::default(),
+                })
             }
 
             PatternKind::Constant { value } => {
-                Test {
-                    span: match_pair.pattern.span,
-                    kind: TestKind::Eq {
-                        value,
-                        ty: match_pair.pattern.ty.clone()
-                    }
-                }
+                Some(TestKind::Eq {
+                    value,
+                    ty: match_pair.pattern.ty.clone()
+                })
             }
 
             PatternKind::Range(range) => {
                 assert!(range.ty == match_pair.pattern.ty);
-                Test {
-                    span: match_pair.pattern.span,
-                    kind: TestKind::Range(range),
-                }
+                Some(TestKind::Range(range))
             }
 
             PatternKind::Slice { ref prefix, ref slice, ref suffix } => {
@@ -77,38 +241,77 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 } else {
                     BinOp::Eq
                 };
-                Test {
-                    span: match_pair.pattern.span,
-                    kind: TestKind::Len { len: len as u64, op: op },
-                }
+                Some(TestKind::Len { len: len as u64, op: op })
+            }
+
+            PatternKind::Or { ref pats } => {
+                let pairs = pats.iter().map(|pat| {
+                    MatchPair::new(match_pair.place.clone(), pat)
+                }).collect::<Vec<_>>();
+                let lowered_pairs = self.lower_pairs(pairs).into_iter().map(|(test_opt, pair)| {
+                    let test = test_opt.unwrap_or_else(|| self.error_simplifyable(&pair));
+                    let subpat = match *pair.pattern.kind {
+                        PatternKind::Variant {
+                            ref subpatterns, ref adt_def, variant_index, ..
+                        } => {
+                            let elem = ProjectionElem::Downcast(
+                                Some(adt_def.variants[variant_index].ident.name),
+                                variant_index
+                            );
+                            let downcast_place = pair.place.clone().elem(elem);
+                            //let mut next_tests = Vec::new();
+                            let next_pairs = subpatterns.iter().map(|subpat| {
+                                let new_place = downcast_place.clone();
+                                let field_place = new_place.field(subpat.field,
+                                                                  subpat.pattern.ty);
+                                MatchPair::new(field_place, &subpat.pattern)
+                            }).collect::<Vec<_>>();
+                            Some(
+                                self.lower_pairs(next_pairs)
+                                    .into_iter()
+                                    .filter_map(|(test, pair)| {
+                                        test.map(|x| (pair.place, x))
+                                    }).collect::<Vec<_>>()
+                            )
+                        },
+                        _ => None
+                    };
+                    (test, subpat)
+                }).collect::<Vec<_>>();
+                Some(TestKind::Or { tests: lowered_pairs })
             }
 
             PatternKind::AscribeUserType { .. } |
             PatternKind::Array { .. } |
             PatternKind::Wild |
-            PatternKind::Or { .. } |
             PatternKind::Binding { .. } |
             PatternKind::Leaf { .. } |
             PatternKind::Deref { .. } => {
-                self.error_simplifyable(match_pair)
+                None
             }
         }
     }
 
-    pub fn add_cases_to_switch<'pat>(&mut self,
-                                     test_place: &Place<'tcx>,
-                                     candidate: &Candidate<'pat, 'tcx>,
-                                     switch_ty: Ty<'tcx>,
-                                     options: &mut Vec<u128>,
-                                     indices: &mut FxHashMap<&'tcx ty::Const<'tcx>, usize>)
-                                     -> bool
-    {
-        let match_pair = match candidate.match_pairs.iter().find(|mp| mp.place == *test_place) {
-            Some(match_pair) => match_pair,
-            _ => { return false; }
-        };
+    /// Identifies what test is needed to decide if `match_pair` is applicable.
+    ///
+    /// It is a bug to call this with a simplifiable pattern.
+    pub fn test<'pat>(&mut self, match_pair: &MatchPair<'pat, 'tcx>) -> Test<'tcx> {
+        Test {
+            span: match_pair.pattern.span,
+            kind: self.lower_pair(match_pair).unwrap_or_else(|| {
+                self.error_simplifyable(match_pair)
+            })
+        }
+    }
 
-        match *match_pair.pattern.kind {
+    fn add_cases_to_switch_from_pat(&mut self,
+                                    pat: &'pat Pattern<'tcx>,
+                                    switch_ty: Ty<'tcx>,
+                                    options: &mut Vec<u128>,
+                                    indices: &mut FxHashMap<&'tcx ty::Const<'tcx>, usize>)
+                                    -> bool
+    {
+        match *pat.kind {
             PatternKind::Constant { value } => {
                 let switch_ty = ty::ParamEnv::empty().and(switch_ty);
                 indices.entry(value)
@@ -140,18 +343,29 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         }
     }
 
-    pub fn add_variants_to_switch<'pat>(&mut self,
-                                        test_place: &Place<'tcx>,
-                                        candidate: &Candidate<'pat, 'tcx>,
-                                        variants: &mut BitSet<VariantIdx>)
-                                        -> bool
+    pub fn add_cases_to_switch<'pat>(&mut self,
+                                     test_place: &Place<'tcx>,
+                                     candidate: &Candidate<'pat, 'tcx>,
+                                     switch_ty: Ty<'tcx>,
+                                     options: &mut Vec<u128>,
+                                     indices: &mut FxHashMap<&'tcx ty::Const<'tcx>, usize>)
+                                     -> bool
     {
         let match_pair = match candidate.match_pairs.iter().find(|mp| mp.place == *test_place) {
             Some(match_pair) => match_pair,
             _ => { return false; }
         };
 
-        match *match_pair.pattern.kind {
+        self.add_cases_to_switch_from_pat(match_pair.pattern, switch_ty,
+                                          options, indices)
+    }
+
+    pub fn add_variants_to_switch_from_pat<'pat>(&mut self,
+                                                 pat: &'pat Pattern<'tcx>,
+                                                 variants: &mut BitSet<VariantIdx>)
+                                                 -> bool
+    {
+        match *pat.kind {
             PatternKind::Variant { adt_def: _ , variant_index,  .. } => {
                 // We have a pattern testing for variant `variant_index`
                 // set the corresponding index to true
@@ -165,12 +379,26 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         }
     }
 
-    pub fn perform_test(
+    pub fn add_variants_to_switch<'pat>(&mut self,
+                                        test_place: &Place<'tcx>,
+                                        candidate: &Candidate<'pat, 'tcx>,
+                                        variants: &mut BitSet<VariantIdx>)
+                                        -> bool
+    {
+        let match_pair = match candidate.match_pairs.iter().find(|mp| mp.place == *test_place) {
+            Some(match_pair) => match_pair,
+            _ => { return false; }
+        };
+
+        self.add_variants_to_switch_from_pat(match_pair.pattern, variants)
+    }
+
+    pub(super) fn perform_test<F: TargetBlockBuilder<'tcx>>(
         &mut self,
         block: BasicBlock,
         place: &Place<'tcx>,
         test: &Test<'tcx>,
-        make_target_blocks: impl FnOnce(&mut Self) -> Vec<BasicBlock>,
+        target_block_builder: F,
     ) {
         debug!("perform_test({:?}, {:?}: {:?}, {:?})",
                block,
@@ -181,7 +409,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let source_info = self.source_info(test.span);
         match test.kind {
             TestKind::Switch { adt_def, ref variants } => {
-                let target_blocks = make_target_blocks(self);
+                let target_blocks = target_block_builder.target_blocks(self);
                 // Variants is a BitVec of indexes into adt_def.variants.
                 let num_enum_variants = adt_def.variants.len();
                 let used_variants = variants.count();
@@ -226,7 +454,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             }
 
             TestKind::SwitchInt { switch_ty, ref options, indices: _ } => {
-                let target_blocks = make_target_blocks(self);
+                let target_blocks = target_block_builder.target_blocks(self);
                 let terminator = if switch_ty.sty == ty::Bool {
                     assert!(options.len() > 0 && options.len() <= 2);
                     if let [first_bb, second_bb] = *target_blocks {
@@ -263,14 +491,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     // (the binop can only handle primitives)
                     self.non_scalar_compare(
                         block,
-                        make_target_blocks,
+                        target_block_builder,
                         source_info,
                         value,
                         place,
                         ty,
                     );
                 } else {
-                    if let [success, fail] = *make_target_blocks(self) {
+                    if let [success, fail] = *target_block_builder.target_blocks(self) {
                         let val = Operand::Copy(place.clone());
                         let expect = self.literal_operand(test.span, ty, value);
                         self.compare(block, success, fail, source_info, BinOp::Eq, expect, val);
@@ -282,7 +510,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
             TestKind::Range(PatternRange { ref lo, ref hi, ty, ref end }) => {
                 let lower_bound_success = self.cfg.start_new_block();
-                let target_blocks = make_target_blocks(self);
+                let target_blocks = target_block_builder.target_blocks(self);
 
                 // Test `val` by computing `lo <= val && val <= hi`, using primitive comparisons.
                 let lo = self.literal_operand(test.span, ty, lo);
@@ -310,7 +538,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             }
 
             TestKind::Len { len, op } => {
-                let target_blocks = make_target_blocks(self);
+                let target_blocks = target_block_builder.target_blocks(self);
 
                 let usize_ty = self.hir.usize_ty();
                 let actual = self.temp(usize_ty, test.span);
@@ -337,6 +565,112 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 } else {
                     bug!("`TestKind::Len` should have two target blocks");
                 }
+            }
+
+            TestKind::Or { ref tests } => {
+                // FIXME(dlrobertson): decrease the amount of debug logging below.
+                debug!("==== BUILDING OR-PATTERN ====");
+                // An or pattern can either pass or fail.
+                let (success, fail) = {
+                    if let [success, fail] = *target_block_builder.target_blocks(self) {
+                        (success, fail)
+                    } else {
+                        bug!("or-pattern should generate only a success and failure block");
+                    }
+                };
+
+                // Set up the current block and a otherwise block before
+                // iterating over the subtests.
+                let mut current_block = self.cfg.start_new_block();
+                let mut otherwise = current_block;
+
+                self.cfg.terminate(block, source_info, TerminatorKind::Goto {
+                    target: current_block
+                });
+
+                debug!("or-pattern: success={:?} fail={:?} block={:?} current_block={:?}",
+                       success, fail, block, current_block);
+
+                for (subtest, subpat) in tests {
+                    // Create an otherwise block that will be the current block
+                    // for subsequent tests.
+                    otherwise = self.cfg.start_new_block();
+
+                    let next_block = match subpat {
+                        Some(lowered_tests) if !lowered_tests.is_empty() => {
+                            debug!("or-pattern: lowered_tests={:?}",
+                                   lowered_tests);
+
+                            let sub_start_block = self.cfg.start_new_block();
+                            let mut sub_current_block = sub_start_block;
+
+                            let mut sub_otherwise = sub_start_block;
+
+                            debug!("or-pattern: sub_start_block={:?} sub_crrent_block={:?}",
+                                   sub_start_block, sub_current_block);
+
+                            for (place, subtest) in lowered_tests.iter() {
+                                sub_otherwise = self.cfg.start_new_block();
+                                debug!("subtest={:?} current={:?} otherwise={:?} fail={:?}",
+                                       subtest, sub_current_block, sub_otherwise, fail);
+                                // Create the target block builder.
+                                let target_block_builder = TestTargetBlockBuilder {
+                                    test: &subtest,
+                                    source_info: source_info,
+                                    success: sub_otherwise,
+                                    fail: fail,
+                                };
+
+                                // Perform the subtest.
+                                self.perform_test(sub_current_block,
+                                                  &place.clone(),
+                                                  &subtest,
+                                                  target_block_builder);
+                                // Set the current block to the otherwise block of the previous
+                                // test.
+                                sub_current_block = sub_otherwise;
+                            }
+
+                            self.cfg.terminate(sub_otherwise, source_info,
+                                               TerminatorKind::Goto { target: success });
+
+                            sub_start_block
+                        }
+                        _ => {
+                            success
+                        }
+                    };
+                    debug!("or-pattern: next_block={:?}", next_block);
+
+                    // Create the target block builder.
+                    let target_block_builder = TestTargetBlockBuilder {
+                        test: &subtest,
+                        source_info: source_info,
+                        success: next_block,
+                        fail: otherwise,
+                    };
+                    debug!("or-pattern: target_block_builder={:?}",
+                           target_block_builder);
+
+                    // Perform the subtest.
+                    self.perform_test(current_block,
+                                      &place.clone(),
+                                      subtest,
+                                      target_block_builder);
+
+                    // Set the current block to the otherwise block of the previous
+                    // test.
+                    current_block = otherwise;
+                }
+                debug!("or-pattern: finishing with otherwise={:?} fail={:?}",
+                       otherwise, fail);
+
+                // The lastotherwise block should jump to the or-pattern's
+                // failure block.
+                self.cfg.terminate(otherwise, source_info, TerminatorKind::Goto {
+                    target: fail
+                });
+                debug!("===== ENDING OR-PATTERN =====");
             }
         }
     }
@@ -377,10 +711,10 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     }
 
     /// Compare two `&T` values using `<T as std::compare::PartialEq>::eq`
-    fn non_scalar_compare(
+    fn non_scalar_compare<F: TargetBlockBuilder<'tcx>>(
         &mut self,
         block: BasicBlock,
-        make_target_blocks: impl FnOnce(&mut Self) -> Vec<BasicBlock>,
+        target_block_builder: F,
         source_info: SourceInfo,
         value: &'tcx ty::Const<'tcx>,
         place: &Place<'tcx>,
@@ -466,7 +800,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             from_hir_call: false,
         });
 
-        if let [success_block, fail_block] = *make_target_blocks(self) {
+        if let [success_block, fail_block] = *target_block_builder.target_blocks(self) {
             // check the result
             self.cfg.terminate(
                 eq_block,
@@ -694,7 +1028,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             (&TestKind::Range { .. }, _) => None,
 
             (&TestKind::Eq { .. }, _) |
-            (&TestKind::Len { .. }, _) => {
+            (&TestKind::Len { .. }, _) |
+            (&TestKind::Or { .. }, _) => {
                 // These are all binary tests.
                 //
                 // FIXME(#29623) we can be more clever here
@@ -805,7 +1140,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 impl Test<'_> {
     pub(super) fn targets(&self) -> usize {
         match self.kind {
-            TestKind::Eq { .. } | TestKind::Range(_) | TestKind::Len { .. } => {
+            // binary tests
+            TestKind::Eq { .. } | TestKind::Range(_) |
+            TestKind::Len { .. } | TestKind::Or { .. } => {
                 2
             }
             TestKind::Switch { adt_def, .. } => {

@@ -667,7 +667,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Candidate<'pat, 'tcx> {
     // span of the original pattern that gave rise to this candidate
     span: Span,
@@ -766,9 +766,14 @@ enum TestKind<'tcx> {
         len: u64,
         op: BinOp,
     },
+
+    /// An or-pattern e.g., `Foo(A | B)`
+    Or {
+        tests: Vec<(Test<'tcx>, Option<Vec<(Place<'tcx>, Test<'tcx>)>>)>
+    },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Test<'tcx> {
     span: Span,
     kind: TestKind<'tcx>,
@@ -1143,7 +1148,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         span: Span,
         mut candidates: &'b mut [&'c mut Candidate<'pat, 'tcx>],
         block: BasicBlock,
-        mut otherwise_block: Option<BasicBlock>,
+        otherwise_block: Option<BasicBlock>,
         fake_borrows: &mut Option<FxHashSet<Place<'tcx>>>,
     ) {
         // extract the match-pair from the highest priority candidate
@@ -1222,58 +1227,19 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         debug!("tested_candidates: {}", total_candidate_count - candidates.len());
         debug!("untested_candidates: {}", candidates.len());
 
-        // HACK(matthewjasper) This is a closure so that we can let the test
-        // create its blocks before the rest of the match. This currently
-        // improves the speed of llvm when optimizing long string literal
-        // matches
-        let make_target_blocks = move |this: &mut Self| -> Vec<BasicBlock> {
-            // For each outcome of test, process the candidates that still
-            // apply. Collect a list of blocks where control flow will
-            // branch if one of the `target_candidate` sets is not
-            // exhaustive.
-            if !candidates.is_empty() {
-                let remainder_start = &mut None;
-                this.match_candidates(
-                    span,
-                    remainder_start,
-                    otherwise_block,
-                    candidates,
-                    fake_borrows,
-                );
-                otherwise_block = Some(remainder_start.unwrap());
-            };
-
-            target_candidates.into_iter().map(|mut candidates| {
-                if candidates.len() != 0 {
-                    let candidate_start = &mut None;
-                    this.match_candidates(
-                        span,
-                        candidate_start,
-                        otherwise_block,
-                        &mut *candidates,
-                        fake_borrows,
-                    );
-                    candidate_start.unwrap()
-                } else {
-                    *otherwise_block.get_or_insert_with(|| {
-                        let unreachable = this.cfg.start_new_block();
-                        let source_info = this.source_info(span);
-                        this.cfg.terminate(
-                            unreachable,
-                            source_info,
-                            TerminatorKind::Unreachable,
-                        );
-                        unreachable
-                    })
-                }
-            }).collect()
+        let target_block_builder = CandidateTargetBlockBuilder {
+            candidates: candidates,
+            span: span,
+            fake_borrows: fake_borrows,
+            otherwise_block: otherwise_block,
+            target_candidates: target_candidates
         };
 
         self.perform_test(
             block,
             &match_place,
             &test,
-            make_target_blocks,
+            target_block_builder,
         );
     }
 
@@ -1758,5 +1724,72 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         };
         debug!("declare_binding: vars={:?}", locals);
         self.var_indices.insert(var_id, locals);
+    }
+}
+
+// HACK(matthewjasper | dlrobertson) This is a trait so that we
+// can let the test create its blocks before the rest of the match.
+// This currently improves the speed of llvm when optimizing long
+// string literal matches
+trait TargetBlockBuilder<'tcx> {
+    fn target_blocks(self, this: &mut Builder<'_, 'tcx>) -> Vec<BasicBlock>;
+}
+
+struct CandidateTargetBlockBuilder<'tcx, 'pat, 'a, 'b, 'c> {
+    candidates: &'a mut [&'b mut Candidate<'pat, 'tcx>],
+    span: Span,
+    fake_borrows: &'c mut Option<FxHashSet<Place<'tcx>>>,
+    otherwise_block: Option<BasicBlock>,
+    target_candidates: Vec<Vec<&'c mut Candidate<'pat, 'tcx>>>,
+}
+
+impl<'tcx, 'pat, 'a, 'b, 'c> TargetBlockBuilder<'tcx> for
+        CandidateTargetBlockBuilder<'tcx, 'pat, 'a, 'b, 'c> {
+    fn target_blocks(mut self, this: &mut Builder<'_, 'tcx>) -> Vec<BasicBlock> {
+        // For each outcome of test, process the candidates that still
+        // apply. Collect a list of blocks where control flow will
+        // branch if one of the `target_candidate` sets is not
+        // exhaustive.
+        if !self.candidates.is_empty() {
+            let remainder_start = &mut None;
+            this.match_candidates(
+                self.span,
+                remainder_start,
+                self.otherwise_block,
+                self.candidates,
+                self.fake_borrows,
+            );
+            self.otherwise_block = Some(remainder_start.unwrap());
+        };
+
+        debug!("CandidateTargetBlockBuilder: target_candidates={:?}",
+               self.target_candidates);
+        let mut otherwise_block = self.otherwise_block;
+        let span = self.span;
+        let fake_borrows = self.fake_borrows;
+        self.target_candidates.into_iter().map(|mut candidates| {
+            if !candidates.is_empty() {
+                let candidate_start = &mut None;
+                this.match_candidates(
+                    span,
+                    candidate_start,
+                    otherwise_block,
+                    &mut *candidates,
+                    fake_borrows,
+                );
+                candidate_start.unwrap()
+            } else {
+                *otherwise_block.get_or_insert_with(|| {
+                    let unreachable = this.cfg.start_new_block();
+                    let source_info = this.source_info(span);
+                    this.cfg.terminate(
+                        unreachable,
+                        source_info,
+                        TerminatorKind::Unreachable,
+                    );
+                    unreachable
+                })
+            }
+        }).collect()
     }
 }

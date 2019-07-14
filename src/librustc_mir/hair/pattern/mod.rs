@@ -41,19 +41,19 @@ pub enum PatternError {
     NonConstPath(Span),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum BindingMode {
     ByValue,
     ByRef(BorrowKind),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FieldPattern<'tcx> {
     pub field: Field,
     pub pattern: Pattern<'tcx>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Pattern<'tcx> {
     pub ty: Ty<'tcx>,
     pub span: Span,
@@ -115,7 +115,7 @@ pub struct Ascription<'tcx> {
     pub user_ty_span: Span,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PatternKind<'tcx> {
     Wild,
 
@@ -176,7 +176,7 @@ pub enum PatternKind<'tcx> {
         suffix: Vec<Pattern<'tcx>>,
     },
 
-    /// or-pattern
+    /// An or-pattern, e.g. `p | q`.
     Or {
         pats: Vec<Pattern<'tcx>>,
     },
