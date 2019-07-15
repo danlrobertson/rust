@@ -21,7 +21,7 @@ use rustc::hir::intravisit::{self, Visitor, NestedVisitorMap};
 use rustc::hir::ptr::P;
 use rustc::hir::{self, Pat, PatKind};
 
-use smallvec::smallvec;
+use smallvec::{SmallVec, smallvec};
 use std::slice;
 
 use syntax_pos::{Span, DUMMY_SP, MultiSpan};
@@ -166,17 +166,17 @@ impl<'a, 'tcx> MatchVisitor<'a, 'tcx> {
             let mut have_errors = false;
 
             let inlined_arms : Vec<(Vec<_>, _)> = arms.iter().map(|arm| (
-                arm.pats.iter().map(|pat| {
+                arm.pats.iter().flat_map(|pat| {
                     let mut patcx = PatternContext::new(self.tcx,
                                                         self.param_env.and(self.identity_substs),
                                                         self.tables);
                     patcx.include_lint_checks();
-                    let pattern = expand_pattern(cx, patcx.lower_pattern(&pat));
+                    let patterns = expand_pattern(cx, patcx.lower_pattern(&pat));
                     if !patcx.errors.is_empty() {
                         patcx.report_inlining_errors(pat.span);
                         have_errors = true;
                     }
-                    (pattern, &**pat)
+                    patterns.into_iter().map(move |pattern| (pattern, &**pat))
                 }).collect(),
                 arm.guard.as_ref().map(|g| match g {
                     hir::Guard::If(ref e) => &**e,
@@ -270,9 +270,9 @@ impl<'a, 'tcx> MatchVisitor<'a, 'tcx> {
             patcx.include_lint_checks();
             let pattern = patcx.lower_pattern(pat);
             let pattern_ty = pattern.ty;
-            let pats: Matrix<'_, '_> = vec![smallvec![
-                expand_pattern(cx, pattern)
-            ]].into_iter().collect();
+            let pats: Matrix<'_, '_> = vec![
+                SmallVec::from_vec(expand_pattern(cx, pattern))
+            ].into_iter().collect();
 
             let wild_pattern = Pattern {
                 ty: pattern_ty,

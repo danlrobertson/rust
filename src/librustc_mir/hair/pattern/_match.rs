@@ -186,9 +186,13 @@ use std::u128;
 use std::convert::TryInto;
 
 pub fn expand_pattern<'a, 'tcx>(cx: &MatchCheckCtxt<'a, 'tcx>, pat: Pattern<'tcx>)
-                                -> &'a Pattern<'tcx>
+                                -> Vec<&'a Pattern<'tcx>>
 {
-    cx.pattern_arena.alloc(LiteralExpander { tcx: cx.tcx }.fold_pattern(&pat))
+    let pat = cx.pattern_arena.alloc(LiteralExpander { tcx: cx.tcx }.fold_pattern(&pat));
+    match &*pat.kind {
+        PatternKind::Or { pats } => pats.iter().collect(),
+        _ => vec![pat],
+    }
 }
 
 struct LiteralExpander<'tcx> {
